@@ -1,11 +1,13 @@
 import {
   NodeApiError,
+  NodeConnectionTypes,
   NodeOperationError,
   type IDataObject,
   type INodeExecutionData,
   type INodeType,
   type INodeTypeDescription,
   type IPollFunctions,
+  type JsonObject,
 } from "n8n-workflow";
 
 import {
@@ -29,15 +31,23 @@ export class JoboTrigger implements INodeType {
   description: INodeTypeDescription = {
     displayName: "Jobo Trigger",
     name: "joboTrigger",
-    icon: "file:jobo.png",
+    // SVG, not PNG: n8n's verification lint rejects raster node icons. The two
+    // themed variants must be distinct files (the lint rejects a pair pointing
+    // at the same one); jobo-dark.svg lifts the gradient's cool end and adds a
+    // hairline so the squircle does not dissolve into a dark canvas.
+    icon: { light: "file:jobo.svg", dark: "file:jobo-dark.svg" },
     group: ["trigger"],
     version: 1,
     subtitle: '={{"New job matching filters"}}',
     description: "Starts the workflow when a new job matching your filters is indexed",
     defaults: { name: "Jobo Trigger" },
     polling: true,
+    // Inert on a trigger — n8n only exposes non-trigger nodes to agents — but
+    // the property is `true | UsableAsToolDescription`, so `true` is the only
+    // way to satisfy `@n8n/community-nodes/node-usable-as-tool`.
+    usableAsTool: true,
     inputs: [],
-    outputs: ["main"],
+    outputs: [NodeConnectionTypes.Main],
     credentials: [{ name: "joboApi", required: true }],
     properties: [
       {
@@ -65,7 +75,7 @@ export class JoboTrigger implements INodeType {
         name: "location",
         type: "resourceLocator",
         default: { mode: "list", value: "" },
-        description: "Only jobs in this location. Leave empty to match everywhere",
+        description: "Only jobs in this location. Leave empty to match everywhere.",
         modes: [
           {
             displayName: "From List",
@@ -107,12 +117,13 @@ export class JoboTrigger implements INodeType {
             default: [],
           },
           {
-            displayName: "Industries",
+            displayName: "Industry Names or IDs",
             name: "industries",
             type: "multiOptions",
             typeOptions: { loadOptionsMethod: "getIndustries" },
             default: [],
-            description: "Restrict to companies in specific industries",
+            description:
+              'Restrict to companies in specific industries. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
           },
           {
             displayName: "Max Salary (USD)",
@@ -140,7 +151,8 @@ export class JoboTrigger implements INodeType {
             name: "search_description",
             type: "boolean",
             default: true,
-            description: "Match the query against full descriptions as well as titles. Turn off for title-only matching.",
+            description:
+              "Whether to match the query against full job descriptions as well as titles. Turn this off for title-only matching.",
           },
           {
             displayName: "Skills",
@@ -151,12 +163,13 @@ export class JoboTrigger implements INodeType {
             description: "Require one or more skills, e.g. Python, Kubernetes",
           },
           {
-            displayName: "Sources",
+            displayName: "Source Names or IDs",
             name: "sources",
             type: "multiOptions",
             typeOptions: { loadOptionsMethod: "getSources" },
             default: [],
-            description: "Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby",
+            description:
+              'Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
           },
           {
             displayName: "Work Model",
@@ -246,7 +259,11 @@ export class JoboTrigger implements INodeType {
       if (error instanceof Error && /narrowing filter/i.test(error.message)) {
         throw new NodeOperationError(this.getNode(), error.message);
       }
-      throw error;
+      // Everything unclassified is an API/transport failure. Re-throwing it raw
+      // loses the node context n8n needs to attribute the failure (and is what
+      // `@n8n/community-nodes/require-node-api-error` forbids); NodeApiError
+      // keeps the original message and status.
+      throw new NodeApiError(this.getNode(), error as JsonObject);
     }
   }
 }

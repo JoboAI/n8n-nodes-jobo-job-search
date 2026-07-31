@@ -1,5 +1,6 @@
 import type {
   IAuthenticateGeneric,
+  Icon,
   ICredentialTestRequest,
   ICredentialType,
   INodeProperties,
@@ -9,6 +10,13 @@ export class JoboApi implements ICredentialType {
   name = "joboApi";
 
   displayName = "Jobo API";
+
+  // Resolved relative to this file — by the verification lint against the
+  // source, and by n8n against the compiled copy in dist/credentials/, which
+  // scripts/copy-icons.mjs puts there. Hence credentials/jobo.svg exists
+  // alongside nodes/Jobo/jobo.svg; copy-icons.mjs fails the build if the two
+  // ever drift apart.
+  icon: Icon = { light: "file:jobo.svg", dark: "file:jobo-dark.svg" };
 
   documentationUrl = "https://jobo.world/integrations/n8n";
 

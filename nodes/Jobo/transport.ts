@@ -1,4 +1,4 @@
-import type { IExecuteFunctions, ILoadOptionsFunctions, IPollFunctions } from "n8n-workflow";
+import { sleep, type IExecuteFunctions, type ILoadOptionsFunctions, type IPollFunctions } from "n8n-workflow";
 import { JoboClient, type Transport, type TransportRequest, type TransportResponse } from "@jobo-ai/connector-core";
 
 type JoboFunctions = IExecuteFunctions | IPollFunctions | ILoadOptionsFunctions;
@@ -56,6 +56,16 @@ export async function joboClient(ctx: JoboFunctions): Promise<JoboClient> {
     apiKey,
     baseUrl,
     transport: n8nTransport(ctx),
-    userAgent: "n8n-nodes-jobo-job-search/0.1.0",
+    // connector-core deliberately ships no default sleep: the timer globals are
+    // restricted for verified community nodes, and a default would be inlined
+    // into this bundle even though it is never called. n8n-workflow is an
+    // externalised peer dependency, so borrowing its `sleep` adds nothing to
+    // the bundle.
+    retry: { sleep },
+    // No version suffix: release.yml rewrites package.json's version from the
+    // git tag at publish time, so any hardcoded number here goes stale on the
+    // next release (it already had, reading 0.1.0 while 0.1.1 shipped).
+    // Attribution is per connector, not per connector version.
+    userAgent: "n8n-nodes-jobo-job-search",
   });
 }

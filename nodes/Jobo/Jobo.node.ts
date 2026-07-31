@@ -1,5 +1,6 @@
 import {
   NodeApiError,
+  NodeConnectionTypes,
   NodeOperationError,
   type IDataObject,
   type IExecuteFunctions,
@@ -28,17 +29,26 @@ export class Jobo implements INodeType {
   description: INodeTypeDescription = {
     displayName: "Jobo",
     name: "jobo",
-    icon: "file:jobo.png",
+    // SVG, not PNG: n8n's verification lint rejects raster node icons. The two
+    // themed variants must be distinct files (the lint rejects a pair pointing
+    // at the same one); jobo-dark.svg lifts the gradient's cool end and adds a
+    // hairline so the squircle does not dissolve into a dark canvas.
+    icon: { light: "file:jobo.svg", dark: "file:jobo-dark.svg" },
     group: ["transform"],
     version: 1,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
     description: "Search and sync live job listings from 100+ ATS platforms",
     defaults: { name: "Jobo" },
-    // String literals rather than the NodeConnectionType enum: it is exported as
-    // a type-only symbol in the n8n-workflow version this builds against, and
-    // the literals are what n8n accepts across all of them.
-    inputs: ["main"],
-    outputs: ["main"],
+    // Every operation is a plain request/response over the Jobo API, so the
+    // node is safe to expose to an AI agent as a tool.
+    usableAsTool: true,
+    // `NodeConnectionTypes` (the const object) is a runtime export from
+    // n8n-workflow 1.83.0 onwards — 1.82 only had the `NodeConnectionType`
+    // enum. That is the effective host floor for this node. The verification
+    // lint demands the enum over the "main" literal AND `peerDependencies`
+    // pinned to "*", so the floor cannot be expressed in the manifest.
+    inputs: [NodeConnectionTypes.Main],
+    outputs: [NodeConnectionTypes.Main],
     credentials: [{ name: "joboApi", required: true }],
     properties: [
       {
@@ -65,26 +75,26 @@ export class Jobo implements INodeType {
           {
             name: "Search",
             value: "search",
-            description: "Search jobs with filters. Billed per job returned",
+            description: "Search jobs with filters. Billed per job returned.",
             action: "Search jobs",
           },
           {
             name: "Get",
             value: "get",
-            description: "Get one job by ID. Does not consume credits",
+            description: "Get one job by ID. Does not consume credits.",
             action: "Get a job",
           },
           {
             name: "Get Many (Feed)",
             value: "feed",
             description:
-              "Bulk cursor feed, up to 1000 per request. Cheaper per job than Search and free on a Jobs Feed plan",
+              "Bulk cursor feed, up to 1000 per request. Cheaper per job than Search and free on a Jobs Feed plan.",
             action: "Get many jobs",
           },
           {
             name: "Get Expired",
             value: "expired",
-            description: "IDs of recently closed jobs, for keeping a local copy in sync. Never consumes credits",
+            description: "IDs of recently closed jobs, for keeping a local copy in sync. Never consumes credits.",
             action: "Get expired jobs",
           },
         ],
@@ -118,7 +128,7 @@ export class Jobo implements INodeType {
         name: "location",
         type: "resourceLocator",
         default: { mode: "list", value: "" },
-        description: "Only jobs in this location. Leave empty to search everywhere",
+        description: "Only jobs in this location. Leave empty to search everywhere.",
         displayOptions: { show: { resource: ["job"], operation: ["search"] } },
         modes: [
           {
@@ -196,12 +206,13 @@ export class Jobo implements INodeType {
             default: [],
           },
           {
-            displayName: "Industries",
+            displayName: "Industry Names or IDs",
             name: "industries",
             type: "multiOptions",
             typeOptions: { loadOptionsMethod: "getIndustries" },
             default: [],
-            description: "Restrict to companies in specific industries",
+            description:
+              'Restrict to companies in specific industries. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
           },
           {
             displayName: "Max Salary (USD)",
@@ -234,7 +245,8 @@ export class Jobo implements INodeType {
             name: "search_description",
             type: "boolean",
             default: true,
-            description: "Match the query against full descriptions as well as titles. Turn off for title-only matching.",
+            description:
+              "Whether to match the query against full job descriptions as well as titles. Turn this off for title-only matching.",
           },
           {
             displayName: "Skills",
@@ -245,12 +257,13 @@ export class Jobo implements INodeType {
             description: "Require one or more skills, e.g. Python, Kubernetes",
           },
           {
-            displayName: "Sources",
+            displayName: "Source Names or IDs",
             name: "sources",
             type: "multiOptions",
             typeOptions: { loadOptionsMethod: "getSources" },
             default: [],
-            description: "Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby",
+            description:
+              'Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
           },
           {
             displayName: "Work Model",
@@ -290,7 +303,7 @@ export class Jobo implements INodeType {
             typeOptions: { multipleValues: true },
             placeholder: "Add Location",
             default: {},
-            description: "Restrict to specific locations. Leave a part empty to match any value for it",
+            description: "Restrict to specific locations. Leave a part empty to match any value for it.",
             options: [
               {
                 displayName: "Location",
@@ -328,12 +341,13 @@ export class Jobo implements INodeType {
             default: "",
           },
           {
-            displayName: "Sources",
+            displayName: "Source Names or IDs",
             name: "sources",
             type: "multiOptions",
             typeOptions: { loadOptionsMethod: "getSources" },
             default: [],
-            description: "Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby",
+            description:
+              'Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
           },
           {
             displayName: "Updated After",
@@ -356,7 +370,7 @@ export class Jobo implements INodeType {
         name: "expiredSince",
         type: "dateTime",
         default: "",
-        description: "Defaults to 24 hours ago. Cannot be more than 7 days in the past",
+        description: "Defaults to 24 hours ago. Cannot be more than 7 days in the past.",
         displayOptions: { show: { resource: ["job"], operation: ["expired"] } },
       },
 

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Jobo">
+  <title>Jobo</title>
+  <!--
+    Dark-canvas variant of jobo.svg. Same brand mark; the difference is edge
+    definition. The gradient's cool end (#1B33E8) sits close in value to n8n's
+    dark editor background, so the squircle's top-right corner dissolves into
+    it. This variant lifts the cool stops a step and adds a low-opacity white
+    inset hairline, which is enough to hold the silhouette.
+
+    Keep in sync with jobo.svg. scripts/copy-icons.mjs enforces that the copies
+    under nodes/Jobo/ and credentials/ stay byte-identical.
+  -->
+  <defs>
+    <linearGradient id="joboBrandDark" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF5C3E"/>
+      <stop offset="28%" stop-color="#E62FAB"/>
+      <stop offset="55%" stop-color="#9A21FF"/>
+      <stop offset="80%" stop-color="#7B27E8"/>
+      <stop offset="100%" stop-color="#3350FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="112" ry="112" fill="url(#joboBrandDark)"/>
+  <rect x="3" y="3" width="506" height="506" rx="109" ry="109"
+        fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="6"/>
+
+  <text x="256" y="270"
+        text-anchor="middle"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="170"
+        font-weight="600"
+        letter-spacing="-6"
+        fill="#fff">Jobo</text>
+
+  <!-- The smile: a stroked arc, rounded caps, matching the wordmark weight. -->
+  <path d="M126 330c34 46 79 69 130 69s96-23 130-69"
+        fill="none"
+        stroke="#fff"
+        stroke-width="44"
+        stroke-linecap="round"/>
+</svg>
