@@ -1,0 +1,48 @@
+name: Release to npm
+
+# Runs in the PUBLIC mirror (github.com/JoboAI/n8n-nodes-jobo), where this
+# file lands via the monorepo's connectors-mirror workflow. n8n's verified
+# community-node rules require publishing from GitHub Actions in a public
+# repo with npm provenance — this workflow IS the n8n publish path; the
+# monorepo cannot produce provenance.
+#
+# Cut a GitHub release (tag vX.Y.Z) in the mirror to publish. Requires the
+# mirror-repo secret NPM_TOKEN.
+#
+# There is no lockfile in this subtree (leaf package): @jobo-ai/connector-core
+# is pinned to an exact version and resolves from the npm registry — publish
+# connector-core from the monorepo FIRST (tag connector-core-vX.Y.Z there).
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: npm install
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify n8n constraints (built bundle)
+        run: npm test
+
+      - name: Align version with the release tag
+        run: npm version --no-git-tag-version "${GITHUB_REF_NAME#v}"
+
+      - name: Publish with provenance
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,67 @@
+{
+  "name": "n8n-nodes-jobo",
+  "version": "0.1.0",
+  "description": "n8n node for Jobo — search and sync millions of live job listings from 100+ ATS platforms.",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "jobo",
+    "jobs",
+    "job-search",
+    "ats",
+    "recruitment"
+  ],
+  "license": "MIT",
+  "homepage": "https://jobo.world/integrations/n8n",
+  "author": {
+    "name": "Jobo",
+    "email": "support@jobo.world"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JoboAI/n8n-nodes-jobo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JoboAI/n8n-nodes-jobo/issues"
+  },
+  "engines": {
+    "node": ">=20.15"
+  },
+  "main": "index.js",
+  "scripts": {
+    "build": "tsup && node scripts/copy-icons.mjs",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/verify-constraints.mjs && node scripts/verify-filters.mjs",
+    "verify": "node scripts/verify-constraints.mjs",
+    "scan": "npx --yes @n8n/scan-community-package n8n-nodes-jobo"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/JoboApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Jobo/Jobo.node.js",
+      "dist/nodes/Jobo/JoboTrigger.node.js"
+    ]
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "devDependencies": {
+    "@jobo-ai/connector-core": "0.1.0",
+    "@types/node": "^20.11.0",
+    "n8n-workflow": "^1.82.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  }
+}
