@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-jobo-job-search",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Job search, job board and career site data for n8n \u2014 search and sync live job listings from 100+ ATS platforms via Jobo.",
   "keywords": [
     "n8n-community-node-package",
@@ -36,10 +36,11 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/verify-constraints.mjs && node scripts/verify-filters.mjs",
     "verify": "node scripts/verify-constraints.mjs",
-    "scan": "npx --yes @n8n/scan-community-package n8n-nodes-jobo-job-search"
+    "scan": "npx --yes @n8n/scan-community-package@beta n8n-nodes-jobo-job-search"
   },
   "files": [
-    "dist"
+    "dist",
+    "index.js"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,

@@ -11,6 +11,29 @@ Full setup and filter docs: [jobo.world/docs/connectors/n8n](https://jobo.world/
 
 **Jobo Trigger** — polls for newly indexed jobs matching your filters.
 
+## Installation
+
+In n8n, go to **Settings → Community nodes → Install**, enter the package name, and confirm:
+
+```
+n8n-nodes-jobo-job-search
+```
+
+Self-hosted n8n only — community nodes cannot be installed on n8n Cloud unless the node is verified.
+
+## Example workflow
+
+Post newly discovered remote Rust jobs to Slack, checked every 15 minutes:
+
+1. **Jobo Trigger** — set *Poll Times* to every 15 minutes, then under *Filters* set
+   **Query** to `rust engineer` and **Work Model** to `Remote`. The trigger records a
+   `discovered_after` watermark, so each run returns only jobs that are new since the last one;
+   the first run returns nothing and simply establishes the starting point.
+2. **Slack → Send Message** — map `{{ $json.title }}` and `{{ $json.apply_url }}` into the message.
+
+At least one narrowing filter (query, location, sources, skills or industries) is required on the
+trigger. Without one it matches every job Jobo indexes and fails loudly rather than running up a bill.
+
 ## Credentials
 
 One field: your Jobo API key (`jbe_live_…` or `jbe_test_…`), from
