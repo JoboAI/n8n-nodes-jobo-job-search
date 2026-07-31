@@ -1,0 +1,19 @@
+{
+  "node": "n8n-nodes-jobo-job-search.joboTrigger",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Data & Storage", "Sales"],
+  "alias": ["Jobs", "Job Search", "Job Board", "Career Site", "New Job Listings", "Recruiting", "ATS", "Hiring"],
+  "resources": {
+    "credentialDocumentation": [
+      {
+        "url": "https://jobo.world/docs/connectors/n8n"
+      }
+    ],
+    "primaryDocumentation": [
+      {
+        "url": "https://jobo.world/docs/connectors/n8n"
+      }
+    ]
+  }
+}

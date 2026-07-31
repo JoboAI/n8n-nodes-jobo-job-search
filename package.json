@@ -1,15 +1,17 @@
 {
-  "name": "n8n-nodes-jobo",
+  "name": "n8n-nodes-jobo-job-search",
   "version": "0.1.0",
-  "description": "n8n node for Jobo — search and sync millions of live job listings from 100+ ATS platforms.",
+  "description": "Job search, job board and career site data for n8n \u2014 search and sync live job listings from 100+ ATS platforms via Jobo.",
   "keywords": [
     "n8n-community-node-package",
-    "n8n",
-    "jobo",
     "jobs",
-    "job-search",
+    "job search",
+    "job board",
+    "job listings",
+    "career site",
+    "recruiting",
     "ats",
-    "recruitment"
+    "jobo"
   ],
   "license": "MIT",
   "homepage": "https://jobo.world/integrations/n8n",
@@ -19,10 +21,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/JoboAI/n8n-nodes-jobo.git"
+    "url": "git+https://github.com/JoboAI/n8n-nodes-jobo-job-search.git"
   },
   "bugs": {
-    "url": "https://github.com/JoboAI/n8n-nodes-jobo/issues"
+    "url": "https://github.com/JoboAI/n8n-nodes-jobo-job-search/issues"
   },
   "engines": {
     "node": ">=20.15"
@@ -34,7 +36,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/verify-constraints.mjs && node scripts/verify-filters.mjs",
     "verify": "node scripts/verify-constraints.mjs",
-    "scan": "npx --yes @n8n/scan-community-package n8n-nodes-jobo"
+    "scan": "npx --yes @n8n/scan-community-package n8n-nodes-jobo-job-search"
   },
   "files": [
     "dist"

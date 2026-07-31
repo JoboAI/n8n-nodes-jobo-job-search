@@ -1,6 +1,6 @@
 name: Release to npm
 
-# Runs in the PUBLIC mirror (github.com/JoboAI/n8n-nodes-jobo), where this
+# Runs in the PUBLIC mirror (github.com/JoboAI/n8n-nodes-jobo-job-search), where this
 # file lands via the monorepo's connectors-mirror workflow. n8n's verified
 # community-node rules require publishing from GitHub Actions in a public
 # repo with npm provenance — this workflow IS the n8n publish path; the

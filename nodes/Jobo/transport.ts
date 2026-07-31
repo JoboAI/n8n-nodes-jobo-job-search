@@ -56,6 +56,6 @@ export async function joboClient(ctx: JoboFunctions): Promise<JoboClient> {
     apiKey,
     baseUrl,
     transport: n8nTransport(ctx),
-    userAgent: "n8n-nodes-jobo/0.1.0",
+    userAgent: "n8n-nodes-jobo-job-search/0.1.0",
   });
 }

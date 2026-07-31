@@ -1,4 +1,4 @@
-# n8n-nodes-jobo
+# n8n-nodes-jobo-job-search
 
 n8n community node for [Jobo](https://jobo.world) — search and sync millions of live job listings
 collected from employer career sites and 100+ applicant tracking systems.
@@ -74,7 +74,7 @@ Since 1 May 2026 n8n rejects locally published community nodes: releases must co
 with npm provenance — never `npm publish` from a laptop.
 
 This subtree doesn't publish itself. It's mirrored one-way into the public
-[`JoboAI/n8n-nodes-jobo`](https://github.com/JoboAI/n8n-nodes-jobo) repo by the monorepo's
+[`JoboAI/n8n-nodes-jobo-job-search`](https://github.com/JoboAI/n8n-nodes-jobo-job-search) repo by the monorepo's
 `connectors-mirror.yml`, and that mirror's own `.github/workflows/release.yml` is the actual publish path —
 cutting a GitHub release (`vX.Y.Z`) there builds, verifies, and `npm publish --provenance`s. `@jobo-ai/connector-core`
 must already be on npm before that release runs, since the mirror resolves it from the registry rather than
