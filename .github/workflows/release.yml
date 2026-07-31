@@ -25,9 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22: `npm install` here pulls n8n-workflow, whose transitive
+      # isolated-vm is a native module requiring Node >=22 (it fails to
+      # compile against Node 20's V8). Build-time only — the published
+      # package bundles everything and ships no runtime dependencies.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
 
       - name: Install
