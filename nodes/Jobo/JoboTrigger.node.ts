@@ -16,6 +16,7 @@ import {
   InsufficientCreditsError,
   WORK_MODELS,
   WindowOverflowError,
+  assertHasNarrowingFilter,
   poll,
   type JobSearchParams,
   type PollState,
@@ -26,6 +27,16 @@ import { listSearch, loadOptions, resourceLocatorValue } from "./methods";
 
 const optionsFrom = (values: readonly string[]) =>
   values.map((value) => ({ name: value.replace(/(^|-)([a-z])/g, (m) => m.toUpperCase()), value }));
+
+/**
+ * "Fetch Test Event" preview window. n8n discards workflow static data for
+ * manual executions, so a manual run always starts at `watermark === null` and
+ * can never advance past the seeding branch — erroring there would mean the
+ * button never shows data, which is both a poor first impression and contrary
+ * to how every core polling trigger behaves.
+ */
+const SAMPLE_LOOKBACK_SECONDS = 3600;
+const SAMPLE_PAGE_SIZE = 25;
 
 export class JoboTrigger implements INodeType {
   description: INodeTypeDescription = {
@@ -54,7 +65,7 @@ export class JoboTrigger implements INodeType {
         // The filter names here are exactly connector-core's
         // NARROWING_FILTER_KEYS — keep the two in sync.
         displayName:
-          "At least one narrowing filter is required: q (the query), location, sources, skills or industries. Cost is about $3 per 1,000 jobs returned and does not depend on how often this polls, so filter breadth is what drives the bill. For high volume or real-time delivery, use a Jobo Outbound Feed webhook instead: flat subscription, no per-job credits.",
+          "At least one narrowing filter is required: q (the query), location, sources, skills or industries. Cost is about $3 per 1,000 jobs returned and does not depend on how often this polls, so filter breadth is what drives the bill. Fetch Test Event previews up to 25 jobs indexed in the last hour and is billed like any other search. For high volume or real-time delivery, use a Jobo Outbound Feed webhook instead: flat subscription, no per-job credits.",
         name: "costNotice",
         type: "notice",
         default: "",
@@ -212,6 +223,46 @@ export class JoboTrigger implements INodeType {
     const staticData = this.getWorkflowStaticData("node") as { joboPollState?: PollState };
     const state: PollState = staticData.joboPollState ?? { watermark: null, seenIds: [] };
 
+    // Manual run: return a bounded recent sample so the editor shows real data,
+    // and persist nothing — the production watermark must stay owned by
+    // production polls. Deliberately not routed through `poll()`: that would
+    // seed, and a seeded state we then discard is just a wasted round trip.
+    //
+    // The empty-window case is thrown *after* the try, not inside it: the
+    // verification lint forbids re-throwing a caught error, so a NodeOperationError
+    // raised inside would have to survive the catch below to keep its description.
+    if (this.getMode() === "manual") {
+      let sample: INodeExecutionData[];
+
+      try {
+        assertHasNarrowingFilter(filters as Record<string, unknown>);
+
+        const since = new Date(Date.now() - SAMPLE_LOOKBACK_SECONDS * 1000).toISOString();
+        const { data } = await client.searchJobs({
+          ...filters,
+          discovered_after: since,
+          page: 1,
+          page_size: SAMPLE_PAGE_SIZE,
+        });
+        sample = data.jobs.map((job) => ({ json: job as unknown as IDataObject }));
+      } catch (error) {
+        throw toPollError(this, error);
+      }
+
+      if (sample.length === 0) {
+        throw new NodeOperationError(
+          this.getNode(),
+          "No jobs matching these filters were indexed in the last hour",
+          {
+            description:
+              "The filters are valid — the sample window is simply empty. Broaden them to preview data here, or activate the workflow: a production poll returns everything indexed since the previous run, however long ago that was.",
+          },
+        );
+      }
+
+      return [sample];
+    }
+
     try {
       const result = await poll(client, filters, state);
       staticData.joboPollState = result.state;
@@ -220,14 +271,6 @@ export class JoboTrigger implements INodeType {
       // first run as a sample, and backfilling the whole index would be both
       // surprising and expensive.
       if (result.seeded || result.jobs.length === 0) {
-        if (this.getMode() === "manual") {
-          throw new NodeOperationError(
-            this.getNode(),
-            result.seeded
-              ? "Trigger armed. No jobs are returned on the first run by design — it records a starting point, and the next poll returns jobs indexed after now."
-              : "No new jobs since the last check.",
-          );
-        }
         return null;
       }
 
@@ -242,30 +285,40 @@ export class JoboTrigger implements INodeType {
     } catch (error) {
       // Do NOT persist state on failure — an advanced watermark plus a failed
       // emit would drop those jobs permanently.
-      if (error instanceof WindowOverflowError) {
-        throw new NodeOperationError(this.getNode(), error.message, {
-          description:
-            "Add or tighten a filter so fewer jobs match per interval. Search results are relevance-ordered with no sort option, so a partial page cannot be resumed safely — Jobo stops rather than silently skipping jobs.",
-        });
-      }
-      if (error instanceof InsufficientCreditsError) {
-        throw new NodeApiError(this.getNode(), { message: error.message } as never, {
-          httpCode: "402",
-          message: "Jobo credit balance too low",
-          description:
-            "Top up at https://enterprise.jobo.world/ or narrow the filters. Note the balance check prices the requested page size, so a retry fails the same way.",
-        });
-      }
-      if (error instanceof Error && /narrowing filter/i.test(error.message)) {
-        throw new NodeOperationError(this.getNode(), error.message);
-      }
-      // Everything unclassified is an API/transport failure. Re-throwing it raw
-      // loses the node context n8n needs to attribute the failure (and is what
-      // `@n8n/community-nodes/require-node-api-error` forbids); NodeApiError
-      // keeps the original message and status.
-      throw new NodeApiError(this.getNode(), error as JsonObject);
+      throw toPollError(this, error);
     }
   }
+}
+
+/**
+ * Map a poll failure onto the error type n8n can attribute to this node.
+ *
+ * Returns rather than throws so callers use `throw toPollError(...)`: the
+ * verification lint (`@n8n/community-nodes/require-node-api-error`) rejects
+ * re-throwing a caught error, and a bare `throw error` would also lose the node
+ * context n8n needs.
+ */
+function toPollError(ctx: IPollFunctions, error: unknown) {
+  if (error instanceof WindowOverflowError) {
+    return new NodeOperationError(ctx.getNode(), error.message, {
+      description:
+        "Add or tighten a filter so fewer jobs match per interval. Search results are relevance-ordered with no sort option, so a partial page cannot be resumed safely — Jobo stops rather than silently skipping jobs.",
+    });
+  }
+  if (error instanceof InsufficientCreditsError) {
+    return new NodeApiError(ctx.getNode(), { message: error.message } as never, {
+      httpCode: "402",
+      message: "Jobo credit balance too low",
+      description:
+        "Top up at https://enterprise.jobo.world/ or narrow the filters. Note the balance check prices the requested page size, so a retry fails the same way.",
+    });
+  }
+  if (error instanceof Error && /narrowing filter/i.test(error.message)) {
+    return new NodeOperationError(ctx.getNode(), error.message);
+  }
+  // Everything unclassified is an API/transport failure. NodeApiError keeps the
+  // original message and status while attributing the failure to this node.
+  return new NodeApiError(ctx.getNode(), error as JsonObject);
 }
 
 function list(value: unknown): string[] | undefined {
