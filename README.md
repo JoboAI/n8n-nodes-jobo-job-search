@@ -106,5 +106,5 @@ step that follows a publish.
 
 ## Licence
 
-MIT. The icon in `nodes/Jobo/jobo.svg` is a placeholder — swap it for the official brand asset before the
-first publish. This is a hard blocker: publishing with a placeholder icon fails review.
+MIT. `nodes/Jobo/jobo.svg` is the official Jobo mark, byte-identical to `brand-kit/favicon.svg` in the
+monorepo.
