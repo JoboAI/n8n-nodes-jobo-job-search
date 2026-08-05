@@ -62,10 +62,9 @@ export async function joboClient(ctx: JoboFunctions): Promise<JoboClient> {
     // externalised peer dependency, so borrowing its `sleep` adds nothing to
     // the bundle.
     retry: { sleep },
-    // No version suffix: release.yml rewrites package.json's version from the
-    // git tag at publish time, so any hardcoded number here goes stale on the
-    // next release (it already had, reading 0.1.0 while 0.1.1 shipped).
-    // Attribution is per connector, not per connector version.
+    // No version suffix: a hardcoded number here goes stale the moment
+    // package.json is bumped (it already had, reading 0.1.0 while 0.1.1
+    // shipped). Attribution is per connector, not per connector version.
     userAgent: "n8n-nodes-jobo-job-search",
   });
 }

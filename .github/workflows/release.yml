@@ -43,18 +43,21 @@ jobs:
       - name: Verify n8n constraints (built bundle)
         run: npm test
 
-      # Idempotent: `npm version` errors with "Version not changed" when
-      # package.json already matches the tag, which is the normal case for a
-      # first release cut from a committed version.
-      - name: Align version with the release tag
+      # The committed version is the source of truth, not the tag. Rewriting
+      # package.json here instead would publish a version that exists nowhere
+      # in git — n8n's verification checks the default branch against npm and
+      # fails the submission on the drift. Bump the version in the monorepo,
+      # let the mirror sync carry it over, THEN cut the tag.
+      - name: Check the release tag matches package.json
         run: |
+          set -euo pipefail
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           CURRENT="$(node -p "require('./package.json').version")"
-          if [ "$CURRENT" = "$TAG_VERSION" ]; then
-            echo "package.json is already at $TAG_VERSION"
-          else
-            npm version --no-git-tag-version "$TAG_VERSION"
+          if [ "$CURRENT" != "$TAG_VERSION" ]; then
+            echo "::error::tag v$TAG_VERSION does not match package.json ($CURRENT). Bump Jobo.Connectors/n8n/package.json in the monorepo, wait for the mirror sync, then re-cut the tag."
+            exit 1
           fi
+          echo "package.json is at $TAG_VERSION"
 
       - name: Publish with provenance
         run: npm publish --provenance --access public
