@@ -44,7 +44,7 @@ larger probe can require more remaining shared allowance or wallet cover just to
 ## Cost, and the one mistake to avoid
 
 Search is metered per job **returned**; an empty poll settles at zero jobs. A Job Search plan uses its
-shared allowance first, then its tier overage rate. Without that plan, Search uses the signed-in direct
+shared allowance first, then its normal job rate. Without that plan, Search uses the signed-in direct
 rate (public list $3 per 1,000 jobs); Jobs Feed does not make Search unlimited. With a correctly persisted
 watermark, **cost does not depend on how often the trigger polls**. Filter breadth is what drives the bill.
 
@@ -63,7 +63,7 @@ Two behaviours that follow from this and may surprise you:
   you to narrow the filter.
 
 For high volume or genuine real-time delivery, use a Jobo Outbound Feed instead. It uses the same
-shared allowance/tier overage, or is unlimited with Jobs Feed.
+shared allowance/normal job pricing, or is unlimited with Jobs Feed.
 
 ## Why there are no runtime dependencies
 
