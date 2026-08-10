@@ -75,7 +75,7 @@ export class Jobo implements INodeType {
           {
             name: "Search",
             value: "search",
-            description: "Search jobs with filters. Shared allowance first, then per-job overage or PAYG.",
+            description: "Search jobs with filters. Included plan jobs first, then the pay-as-you-go rate.",
             action: "Search jobs",
           },
           {
@@ -88,7 +88,7 @@ export class Jobo implements INodeType {
             name: "Get Many (Feed)",
             value: "feed",
             description:
-              "Bulk cursor feed, up to 1000 per request. Uses the same shared allowance or job rate as Search; unlimited on Jobs Feed.",
+              "Bulk cursor feed, up to 1000 per request. Billed like Search — included plan jobs first, then the pay-as-you-go rate; unlimited on Jobs Feed.",
             action: "Get many jobs",
           },
           {
@@ -115,7 +115,7 @@ export class Jobo implements INodeType {
         default: "",
         placeholder: "e.g. senior rust engineer",
         description: "Free-text search across job title and description",
-        hint: "Metered per job returned after any shared allowance — narrow filters to control usage.",
+        hint: "Billed per job returned beyond any included jobs — narrow filters to control usage.",
         displayOptions: { show: { resource: ["job"], operation: ["search"] } },
       },
       // Location lives OUTSIDE the Filters collection deliberately: a
@@ -152,7 +152,7 @@ export class Jobo implements INodeType {
         type: "boolean",
         default: false,
         description: "Whether to return all results or only up to a given limit",
-        hint: "Metered per job returned after any shared allowance — narrow filters to control usage.",
+        hint: "Billed per job returned beyond any included jobs — narrow filters to control usage.",
         displayOptions: { show: { resource: ["job"], operation: ["search", "feed"] } },
       },
       {
@@ -579,9 +579,9 @@ export function toNodeError(ctx: IExecuteFunctions | { getNode: () => never }, e
   if (error instanceof InsufficientCreditsError) {
     return new NodeApiError(node, { message: error.message } as never, {
       httpCode: "402",
-      message: "Jobo credit balance too low",
+      message: "Jobo wallet balance too low",
       description:
-        "The request was rejected before it ran because the wallet cannot cover it. Top up at https://enterprise.jobo.world/ or narrow the filters so fewer jobs are returned.",
+        "The request was rejected before it ran because the wallet cannot cover it. Top up your wallet at https://enterprise.jobo.world/ or narrow the filters so fewer jobs are returned.",
       itemIndex,
     });
   }

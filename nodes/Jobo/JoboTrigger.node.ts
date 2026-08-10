@@ -65,7 +65,7 @@ export class JoboTrigger implements INodeType {
         // The filter names here are exactly connector-core's
         // NARROWING_FILTER_KEYS — keep the two in sync.
         displayName:
-          "At least one narrowing filter is required: q (the query), location, sources, skills or industries. Jobs use the shared Job Search allowance first, then normal job pricing; public direct access is $3 per 1,000. Cost depends on matches, not poll frequency. Fetch Test Event previews up to 25 jobs and uses the same access. For high volume, use Outbound Feed: shared allowance then normal job pricing, or unlimited with Jobs Feed.",
+          "At least one narrowing filter is required: q, location, sources, skills, or industries. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs); cost depends on matches, not poll frequency.",
         name: "costNotice",
         type: "notice",
         default: "",
@@ -283,7 +283,7 @@ export class JoboTrigger implements INodeType {
         `Jobo: ${result.jobs.length} new job(s) over ${result.pagesFetched} request(s); ${spent} credits spent` +
           (balance != null ? `, wallet ${balance} credits` : "") +
           (quotaRemaining != null
-            ? `, shared allowance ${quotaRemaining}${quotaLimit != null ? `/${quotaLimit}` : ""} jobs remaining`
+            ? `, included jobs ${quotaRemaining}${quotaLimit != null ? `/${quotaLimit}` : ""} remaining`
             : ""),
       );
 
@@ -314,9 +314,9 @@ function toPollError(ctx: IPollFunctions, error: unknown) {
   if (error instanceof InsufficientCreditsError) {
     return new NodeApiError(ctx.getNode(), { message: error.message } as never, {
       httpCode: "402",
-      message: "Jobo credit balance too low",
+      message: "Jobo wallet balance too low",
       description:
-        "Top up at https://enterprise.jobo.world/ or narrow the filters. Note the balance check prices the requested page size, so a retry fails the same way.",
+        "Top up your wallet at https://enterprise.jobo.world/ or narrow the filters. Note the balance check prices the requested page size, so a retry fails the same way.",
     });
   }
   if (error instanceof Error && /narrowing filter/i.test(error.message)) {
