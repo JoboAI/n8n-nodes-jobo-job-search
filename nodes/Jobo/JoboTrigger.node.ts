@@ -65,7 +65,7 @@ export class JoboTrigger implements INodeType {
         // The filter names here are exactly connector-core's
         // NARROWING_FILTER_KEYS — keep the two in sync.
         displayName:
-          "At least one narrowing filter is required: q (the query), location, sources, skills or industries. Cost is about $3 per 1,000 jobs returned and does not depend on how often this polls, so filter breadth is what drives the bill. Fetch Test Event previews up to 25 jobs indexed in the last hour and is billed like any other search. For high volume or real-time delivery, use a Jobo Outbound Feed webhook instead: flat subscription, no per-job credits.",
+          "At least one narrowing filter is required: q (the query), location, sources, skills or industries. Jobs use the shared Job Search allowance first, then its tier rate; public direct access is $3 per 1,000. Cost depends on matches, not poll frequency. Fetch Test Event previews up to 25 jobs and uses the same access. For high volume, use Outbound Feed: shared allowance/tier overage, or unlimited with Jobs Feed.",
         name: "costNotice",
         type: "notice",
         default: "",
@@ -275,10 +275,16 @@ export class JoboTrigger implements INodeType {
       }
 
       const spent = result.usage.reduce((sum, u) => sum + (u.creditsDeducted ?? 0), 0);
-      const balance = result.usage[result.usage.length - 1]?.creditsBalance;
+      const latestUsage = result.usage[result.usage.length - 1];
+      const balance = latestUsage?.creditsBalance;
+      const quotaRemaining = latestUsage?.quotaRemaining;
+      const quotaLimit = latestUsage?.quotaLimit;
       this.logger.info(
         `Jobo: ${result.jobs.length} new job(s) over ${result.pagesFetched} request(s); ${spent} credits spent` +
-          (balance != null ? `, ${balance} remaining` : ""),
+          (balance != null ? `, wallet ${balance} credits` : "") +
+          (quotaRemaining != null
+            ? `, shared allowance ${quotaRemaining}${quotaLimit != null ? `/${quotaLimit}` : ""} jobs remaining`
+            : ""),
       );
 
       return [result.jobs.map((job) => ({ json: job as unknown as IDataObject }))];

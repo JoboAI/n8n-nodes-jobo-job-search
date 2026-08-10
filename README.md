@@ -39,13 +39,14 @@ trigger. Without one it matches every job Jobo indexes and fails loudly rather t
 One field: your Jobo API key (`jbe_live_…` or `jbe_test_…`), from
 [enterprise.jobo.world/api-keys](https://enterprise.jobo.world/api-keys). The credential test issues a
 `page_size=1` search — deliberately, because the balance precheck prices the *requested* page size, so a
-larger probe would demand a bigger balance just to verify a key.
+larger probe can require more remaining shared allowance or wallet cover just to verify a key.
 
 ## Cost, and the one mistake to avoid
 
-Search is billed per job **returned**; an empty poll costs nothing. With a correctly persisted watermark,
-**cost does not depend on how often the trigger polls** — roughly $3 per 1,000 new jobs. Filter breadth is
-what drives the bill.
+Search is metered per job **returned**; an empty poll settles at zero jobs. A Job Search plan uses its
+shared allowance first, then its tier overage rate. Without that plan, Search uses the signed-in direct
+rate (public list $3 per 1,000 jobs); Jobs Feed does not make Search unlimited. With a correctly persisted
+watermark, **cost does not depend on how often the trigger polls**. Filter breadth is what drives the bill.
 
 The failure mode worth engineering against is a watermark that never advances. It looks correct in testing
 (the results are right) and multiplies the bill by the lookback-to-interval ratio. The trigger therefore
@@ -61,8 +62,8 @@ Two behaviours that follow from this and may surprise you:
   silently, and holding the watermark would re-bill the same window forever. The trigger stops and tells
   you to narrow the filter.
 
-For high volume or genuine real-time delivery, use a Jobo Outbound Feed **webhook** instead: flat
-subscription, no per-job credits.
+For high volume or genuine real-time delivery, use a Jobo Outbound Feed instead. It uses the same
+shared allowance/tier overage, or is unlimited with Jobs Feed.
 
 ## Why there are no runtime dependencies
 

@@ -75,7 +75,7 @@ export class Jobo implements INodeType {
           {
             name: "Search",
             value: "search",
-            description: "Search jobs with filters. Billed per job returned.",
+            description: "Search jobs with filters. Shared allowance first, then per-job overage or PAYG.",
             action: "Search jobs",
           },
           {
@@ -88,7 +88,7 @@ export class Jobo implements INodeType {
             name: "Get Many (Feed)",
             value: "feed",
             description:
-              "Bulk cursor feed, up to 1000 per request. Cheaper per job than Search and free on a Jobs Feed plan.",
+              "Bulk cursor feed, up to 1000 per request. Uses the same shared allowance or job rate as Search; unlimited on Jobs Feed.",
             action: "Get many jobs",
           },
           {
@@ -115,7 +115,7 @@ export class Jobo implements INodeType {
         default: "",
         placeholder: "e.g. senior rust engineer",
         description: "Free-text search across job title and description",
-        hint: "Billed per job returned — narrow filters to control cost.",
+        hint: "Metered per job returned after any shared allowance — narrow filters to control usage.",
         displayOptions: { show: { resource: ["job"], operation: ["search"] } },
       },
       // Location lives OUTSIDE the Filters collection deliberately: a
@@ -152,7 +152,7 @@ export class Jobo implements INodeType {
         type: "boolean",
         default: false,
         description: "Whether to return all results or only up to a given limit",
-        hint: "Billed per job returned — narrow filters to control cost.",
+        hint: "Metered per job returned after any shared allowance — narrow filters to control usage.",
         displayOptions: { show: { resource: ["job"], operation: ["search", "feed"] } },
       },
       {
