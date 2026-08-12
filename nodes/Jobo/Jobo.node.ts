@@ -88,7 +88,7 @@ export class Jobo implements INodeType {
             name: "Get Many (Feed)",
             value: "feed",
             description:
-              "Bulk cursor feed, up to 1000 per request. Billed like Search — included plan jobs first, then the pay-as-you-go rate; unlimited on Jobs Feed.",
+              "Bulk cursor feed, up to 1000 per request. Billed like Search — included plan jobs first, then the pay-as-you-go rate; no per-job charge on Unlimited.",
             action: "Get many jobs",
           },
           {
