@@ -1,7 +1,7 @@
 # n8n-nodes-jobo-job-search
 
 n8n community node for [Jobo](https://jobo.world) — search and sync millions of live job listings
-collected from employer career sites and 100+ applicant tracking systems.
+collected from employer career sites and 150+ applicant tracking systems.
 
 Full setup and filter docs: [jobo.world/docs/connectors/n8n](https://jobo.world/docs/connectors/n8n).
 

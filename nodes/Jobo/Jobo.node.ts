@@ -37,7 +37,7 @@ export class Jobo implements INodeType {
     group: ["transform"],
     version: 1,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-    description: "Search and sync live job listings from 100+ ATS platforms",
+    description: "Search and sync live job listings from 150+ ATS platforms",
     defaults: { name: "Jobo" },
     // Every operation is a plain request/response over the Jobo API, so the
     // node is safe to expose to an AI agent as a tool.

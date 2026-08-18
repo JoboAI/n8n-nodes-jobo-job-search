@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-jobo-job-search",
   "version": "0.1.5",
-  "description": "Job search, job board and career site data for n8n — search and sync live job listings from 100+ ATS platforms via Jobo.",
+  "description": "Job search, job board and career site data for n8n — search and sync live job listings from 150+ ATS platforms via Jobo.",
   "keywords": [
     "n8n-community-node-package",
     "jobs",
