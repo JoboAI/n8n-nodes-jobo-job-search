@@ -18,7 +18,10 @@ export class JoboApi implements ICredentialType {
   // ever drift apart.
   icon: Icon = { light: "file:jobo.svg", dark: "file:jobo-dark.svg" };
 
-  documentationUrl = "https://jobo.world/integrations/n8n";
+  // The setup guide, not the marketing page: this link is what n8n puts behind
+  // the "Docs" button on the credential dialog, so it should land on install +
+  // filter + troubleshooting steps rather than a product pitch.
+  documentationUrl = "https://jobo.world/docs/connectors/n8n";
 
   properties: INodeProperties[] = [
     {
@@ -28,8 +31,12 @@ export class JoboApi implements ICredentialType {
       typeOptions: { password: true },
       default: "",
       required: true,
+      // Rendered as HTML by n8n, so these are real links rather than text a
+      // user has to retype. The sign-up step is deliberate: every other Jobo
+      // doc links straight to the api-keys page, which is a dead end for
+      // someone who does not have an account yet.
       description:
-        'Your Jobo API key. Starts with "jbe_live_" or "jbe_test_". Create one at https://enterprise.jobo.world/api-keys.',
+        'Your Jobo API key — starts with "jbe_live_" or "jbe_test_". Create one at <a href="https://enterprise.jobo.world/api-keys" target="_blank">enterprise.jobo.world/api-keys</a>. No Jobo account yet? <a href="https://enterprise.jobo.world/register" target="_blank">Sign up free</a> first — the $5 free starting balance is enough to try the node.',
     },
     {
       displayName: "Base URL",

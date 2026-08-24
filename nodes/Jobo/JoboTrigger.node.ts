@@ -14,10 +14,12 @@ import {
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
   InsufficientCreditsError,
+  MIN_POLL_INTERVAL_SECONDS,
   WORK_MODELS,
   WindowOverflowError,
   assertHasNarrowingFilter,
   poll,
+  shouldSkipPoll,
   type JobSearchParams,
   type PollState,
 } from "@jobo-ai/connector-core";
@@ -37,6 +39,32 @@ const optionsFrom = (values: readonly string[]) =>
  */
 const SAMPLE_LOOKBACK_SECONDS = 3600;
 const SAMPLE_PAGE_SIZE = 25;
+
+/**
+ * The floor the node actually honours, as offered in the UI.
+ *
+ * n8n injects its own Poll Times property into every polling node with a
+ * hard-coded "Every Minute" default, and a node cannot narrow that list or
+ * change that default — so a trigger nobody configured fires 1,440 times a day.
+ * Search is metered per job returned, so this costs nothing extra, but the
+ * requests are real. This field is where the interval is genuinely settled; a
+ * tick arriving early is skipped without making a request.
+ *
+ * The lowest option matches `MIN_POLL_INTERVAL_SECONDS`; connector-core clamps
+ * anything below it regardless.
+ */
+const MIN_INTERVAL_OPTIONS = [
+  { name: "Every 15 Minutes", value: 15 },
+  { name: "Every 30 Minutes", value: 30 },
+  { name: "Every Hour", value: 60 },
+  { name: "Every 6 Hours", value: 360 },
+  { name: "Every 24 Hours", value: 1440 },
+] as const;
+
+const DEFAULT_MIN_INTERVAL_MINUTES = 60;
+
+/** Static-data key for the last *attempted* poll. See `poll()` for why it is separate. */
+const LAST_POLLED_AT_KEY = "joboLastPolledAt";
 
 export class JoboTrigger implements INodeType {
   description: INodeTypeDescription = {
@@ -65,10 +93,19 @@ export class JoboTrigger implements INodeType {
         // The filter names here are exactly connector-core's
         // NARROWING_FILTER_KEYS — keep the two in sync.
         displayName:
-          "At least one narrowing filter is required: q, location, sources, skills, or industries. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs); cost depends on matches, not poll frequency.",
+          "At least one narrowing filter is required: q, location, sources, skills, or industries. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs); cost depends on matches, not poll frequency. Jobo checks at most once per Minimum Interval below, so setting Poll Times faster than that changes nothing.",
         name: "costNotice",
         type: "notice",
         default: "",
+      },
+      {
+        displayName: "Minimum Interval",
+        name: "minIntervalMinutes",
+        type: "options",
+        options: [...MIN_INTERVAL_OPTIONS],
+        default: DEFAULT_MIN_INTERVAL_MINUTES,
+        description:
+          "How often this trigger may actually call the Jobo API. n8n's own Poll Times setting above defaults to every minute; ticks that arrive sooner than this are skipped without a request. New jobs are never missed — a poll returns everything indexed since the previous one, however long ago that was.",
       },
       {
         displayName: "Query",
@@ -197,7 +234,11 @@ export class JoboTrigger implements INodeType {
   methods = { loadOptions, listSearch };
 
   async poll(this: IPollFunctions): Promise<INodeExecutionData[][] | null> {
-    const client = await joboClient(this);
+    // 429 is not worth retrying here. connector-core would spend three requests
+    // to learn what the first already said, and the caller loses nothing by
+    // stopping: the watermark is untouched, so the next tick re-queries the
+    // same window. Retrying only adds load to the limiter that just said no.
+    const client = await joboClient(this, { retry: { retryRateLimit: false } });
 
     const raw = this.getNodeParameter("filters", {}) as Record<string, unknown>;
     const filters: JobSearchParams = {
@@ -220,7 +261,10 @@ export class JoboTrigger implements INodeType {
     // watermark MUST live here rather than being recomputed as "now minus one
     // interval" — a window that never advances re-bills the same jobs on every
     // tick, and it looks correct while testing because the results are right.
-    const staticData = this.getWorkflowStaticData("node") as { joboPollState?: PollState };
+    const staticData = this.getWorkflowStaticData("node") as {
+      joboPollState?: PollState;
+      [LAST_POLLED_AT_KEY]?: string;
+    };
     const state: PollState = staticData.joboPollState ?? { watermark: null, seenIds: [] };
 
     // Manual run: return a bounded recent sample so the editor shows real data,
@@ -263,6 +307,43 @@ export class JoboTrigger implements INodeType {
       return [sample];
     }
 
+    // Enforce the interval the user actually chose, since n8n's Poll Times
+    // dropdown is injected by the host and defaults to every minute. A skipped
+    // tick makes no HTTP call and touches no state.
+    const minIntervalMinutes = this.getNodeParameter(
+      "minIntervalMinutes",
+      DEFAULT_MIN_INTERVAL_MINUTES,
+    ) as number;
+    const minIntervalSeconds = Math.max(
+      MIN_POLL_INTERVAL_SECONDS,
+      minIntervalMinutes * 60,
+    );
+
+    if (shouldSkipPoll(staticData[LAST_POLLED_AT_KEY], minIntervalSeconds, new Date())) {
+      this.logger.debug(
+        `Jobo: skipping this tick — the minimum interval of ${minIntervalMinutes} minute(s) has not elapsed`,
+      );
+      return null;
+    }
+
+    // Stamped before the request, and outside `joboPollState`, because the two
+    // have opposite failure rules. Poll state is only assigned on success (see
+    // the catch below), which protects the watermark — but a stamp carried
+    // inside it would be dropped by every failure too, and a trigger that is
+    // erroring would go straight back to calling the API once a minute, which
+    // is exactly what this interval exists to prevent.
+    //
+    // This lives in the in-memory static data object, which is the level that
+    // matters here: n8n holds one `workflow.staticData` per active workflow and
+    // hands the same object to every tick, so the stamp survives from tick to
+    // tick — including across a tick that throws, and across the far more
+    // common tick that simply finds no new jobs. It reaches the database only
+    // when a poll emits, because n8n calls `saveStaticData` from its emit path
+    // and nowhere else. A restart therefore clears the stamp and the next tick
+    // polls immediately, which is the behaviour we want: a restart should not
+    // lock a trigger out for an hour.
+    staticData[LAST_POLLED_AT_KEY] = new Date().toISOString();
+
     try {
       const result = await poll(client, filters, state);
       staticData.joboPollState = result.state;
@@ -270,7 +351,17 @@ export class JoboTrigger implements INodeType {
       // Seeding run: record the watermark, emit nothing. n8n treats a trigger's
       // first run as a sample, and backfilling the whole index would be both
       // surprising and expensive.
-      if (result.seeded || result.jobs.length === 0) {
+      //
+      // Seeding is also exempt from the interval: it makes no request, so it
+      // has nothing to rate-limit, and charging it an interval would mean a
+      // freshly activated workflow sat idle for an hour before its first real
+      // poll. Clearing the stamp lets the next tick fetch for real.
+      if (result.seeded) {
+        delete staticData[LAST_POLLED_AT_KEY];
+        return null;
+      }
+
+      if (result.jobs.length === 0) {
         return null;
       }
 
@@ -308,7 +399,7 @@ function toPollError(ctx: IPollFunctions, error: unknown) {
   if (error instanceof WindowOverflowError) {
     return new NodeOperationError(ctx.getNode(), error.message, {
       description:
-        "Add or tighten a filter so fewer jobs match per interval. Search results are relevance-ordered with no sort option, so a partial page cannot be resumed safely — Jobo stops rather than silently skipping jobs.",
+        "Add or tighten a filter so fewer jobs match per interval, or switch to a Jobo Outbound Feed. Search results are relevance-ordered with no sort option, so a partial page cannot be resumed safely — Jobo stops rather than silently skipping jobs. Shortening the Minimum Interval does not help below its floor.",
     });
   }
   if (error instanceof InsufficientCreditsError) {

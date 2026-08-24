@@ -1,7 +1,18 @@
 import { sleep, type IExecuteFunctions, type ILoadOptionsFunctions, type IPollFunctions } from "n8n-workflow";
-import { JoboClient, type Transport, type TransportRequest, type TransportResponse } from "@jobo-ai/connector-core";
+import {
+  JoboClient,
+  type RetryOverrides,
+  type Transport,
+  type TransportRequest,
+  type TransportResponse,
+} from "@jobo-ai/connector-core";
 
 type JoboFunctions = IExecuteFunctions | IPollFunctions | ILoadOptionsFunctions;
+
+interface JoboClientOverrides {
+  /** Merged over the defaults. `sleep` is always supplied here. */
+  retry?: Partial<Omit<RetryOverrides, "sleep">>;
+}
 
 /**
  * Bridge n8n's HTTP helper into connector-core's transport seam.
@@ -47,7 +58,10 @@ function n8nTransport(ctx: JoboFunctions): Transport {
   };
 }
 
-export async function joboClient(ctx: JoboFunctions): Promise<JoboClient> {
+export async function joboClient(
+  ctx: JoboFunctions,
+  overrides: JoboClientOverrides = {},
+): Promise<JoboClient> {
   const credentials = await ctx.getCredentials("joboApi");
   const apiKey = String(credentials.apiKey ?? "");
   const baseUrl = String(credentials.baseUrl || "https://connect.jobo.world");
@@ -61,10 +75,15 @@ export async function joboClient(ctx: JoboFunctions): Promise<JoboClient> {
     // into this bundle even though it is never called. n8n-workflow is an
     // externalised peer dependency, so borrowing its `sleep` adds nothing to
     // the bundle.
-    retry: { sleep },
+    retry: { sleep, ...overrides.retry },
     // No version suffix: a hardcoded number here goes stale the moment
     // package.json is bumped (it already had, reading 0.1.0 while 0.1.1
     // shipped). Attribution is per connector, not per connector version.
     userAgent: "n8n-nodes-jobo-job-search",
+    // The User-Agent above is advisory — it travels through n8n's own HTTP
+    // stack, which is free to rewrite it. `X-Jobo-Client` is ours, and it is
+    // what the API tags its request metric with. Must stay one of the names on
+    // the server's allowlist or the traffic counts as `other`.
+    client: "n8n",
   });
 }

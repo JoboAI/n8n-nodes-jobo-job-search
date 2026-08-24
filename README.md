@@ -23,9 +23,9 @@ Self-hosted n8n only — community nodes cannot be installed on n8n Cloud unless
 
 ## Example workflow
 
-Post newly discovered remote Rust jobs to Slack, checked every 15 minutes:
+Post newly discovered remote Rust jobs to Slack, checked hourly:
 
-1. **Jobo Trigger** — set *Poll Times* to every 15 minutes, then under *Filters* set
+1. **Jobo Trigger** — leave *Minimum Interval* at **Every Hour**, then under *Filters* set
    **Query** to `rust engineer` and **Work Model** to `Remote`. The trigger records a
    `discovered_after` watermark, so each run returns only jobs that are new since the last one;
    the first run returns nothing and simply establishes the starting point.
@@ -34,10 +34,27 @@ Post newly discovered remote Rust jobs to Slack, checked every 15 minutes:
 At least one narrowing filter (query, location, sources, skills or industries) is required on the
 trigger. Without one it matches every job Jobo indexes and fails loudly rather than running up a bill.
 
+## Poll Times vs Minimum Interval
+
+n8n adds its own *Poll Times* field to every polling node and hard-codes the default to **Every
+Minute** — a node cannot narrow that list or change that default. Left alone, that is 1,440 API
+calls a day per workflow, for a trigger nobody deliberately configured.
+
+So the trigger carries its own **Minimum Interval** (default *Every Hour*, floor 15 minutes), and
+that is the one that decides. A tick arriving sooner is skipped without any HTTP request at all.
+Setting *Poll Times* faster than *Minimum Interval* therefore changes nothing; setting it slower
+does work, since n8n simply never fires the tick.
+
+Nothing is missed either way. A poll returns everything indexed since the previous one, however
+long ago that was — which is also why the cost is unchanged: search is metered per job returned,
+not per request.
+
 ## Credentials
 
 One field: your Jobo API key (`jbe_live_…` or `jbe_test_…`), from
-[enterprise.jobo.world/api-keys](https://enterprise.jobo.world/api-keys). The credential test issues a
+[enterprise.jobo.world/api-keys](https://enterprise.jobo.world/api-keys). No Jobo account yet?
+[Sign up free](https://enterprise.jobo.world/register) first — the $5 free starting balance is
+enough to try the node. The credential test issues a
 `page_size=1` search — deliberately, because the balance precheck prices the *requested* page size, so a
 larger probe can require more remaining shared allowance or wallet cover just to verify a key.
 
