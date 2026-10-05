@@ -79,7 +79,7 @@ Two behaviours that follow from this and may surprise you:
   silently, and holding the watermark would re-bill the same window forever. The trigger stops and tells
   you to narrow the filter.
 
-For high volume or genuine real-time delivery, use a Jobo Outbound Feed instead. It uses the same
+For high volume or push-style delivery, use a Jobo Outbound Feed instead. It uses the same
 shared allowance/normal job pricing, or has no per-job charge on Unlimited.
 
 ## Why there are no runtime dependencies
