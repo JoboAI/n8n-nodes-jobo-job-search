@@ -37,7 +37,7 @@ export class Jobo implements INodeType {
     group: ["transform"],
     version: 1,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-    description: "Search and sync live job listings from 150+ ATS platforms",
+    description: "Search and sync live job listings from 200+ ATS platforms",
     defaults: { name: "Jobo" },
     // Every operation is a plain request/response over the Jobo API, so the
     // node is safe to expose to an AI agent as a tool.
@@ -94,7 +94,8 @@ export class Jobo implements INodeType {
           {
             name: "Get Expired",
             value: "expired",
-            description: "IDs of recently closed jobs, for keeping a local copy in sync. Never consumes credits.",
+            description:
+              "IDs of every job closed since Expired Since, for keeping a local copy in sync. Never consumes credits.",
             action: "Get expired jobs",
           },
         ],
@@ -475,12 +476,23 @@ export class Jobo implements INodeType {
             cursor = data.next_cursor;
           }
         } else if (resource === "job" && operation === "expired") {
+          // Always reads every page. The endpoint covers closures across the
+          // whole index, so a busy day overflows the first 1,000 ids, and a
+          // truncated list leaves closed jobs live downstream. It is free, so
+          // there is no bill to cap — and no Return All toggle, whose required
+          // default of off would cut existing workflows to a 50-item Limit.
           const expiredSince = this.getNodeParameter("expiredSince", i, "") as string;
-          const { data } = await client.getExpiredJobIds(
-            expiredSince ? { expired_since: expiredSince } : {},
-          );
-          for (const id of data.job_ids) {
-            out.push({ json: { id }, pairedItem: { item: i } });
+          let cursor: string | undefined;
+          for (;;) {
+            const { data } = await client.getExpiredJobIds({
+              ...(expiredSince ? { expired_since: expiredSince } : {}),
+              ...(cursor ? { cursor } : {}),
+            });
+            for (const id of data.job_ids) {
+              out.push({ json: { id }, pairedItem: { item: i } });
+            }
+            if (!data.has_more || !data.next_cursor) break;
+            cursor = data.next_cursor;
           }
         } else if (resource === "company") {
           const { data } = await client.getCompany(this.getNodeParameter("companyId", i) as string);
