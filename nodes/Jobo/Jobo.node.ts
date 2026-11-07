@@ -593,7 +593,7 @@ export function toNodeError(ctx: IExecuteFunctions | { getNode: () => never }, e
       httpCode: "402",
       message: "Jobo wallet balance too low",
       description:
-        "The request was rejected before it ran because the wallet cannot cover it. Top up your wallet at https://enterprise.jobo.world/ or narrow the filters so fewer jobs are returned.",
+        "The request was rejected before it ran because the wallet cannot cover it. Top up your wallet at https://enterprise.jobo.world/credits?src=n8n or narrow the filters so fewer jobs are returned.",
       itemIndex,
     });
   }

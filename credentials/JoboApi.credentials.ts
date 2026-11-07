@@ -36,7 +36,7 @@ export class JoboApi implements ICredentialType {
       // doc links straight to the api-keys page, which is a dead end for
       // someone who does not have an account yet.
       description:
-        'Your Jobo API key — starts with "jbe_live_" or "jbe_test_". Create one at <a href="https://enterprise.jobo.world/api-keys" target="_blank">enterprise.jobo.world/api-keys</a>. No Jobo account yet? <a href="https://enterprise.jobo.world/register" target="_blank">Sign up free</a> first — the $5 free starting balance is enough to try the node.',
+        'Your Jobo API key — starts with "jbe_live_" or "jbe_test_". Create one at <a href="https://enterprise.jobo.world/api-keys?src=n8n" target="_blank">enterprise.jobo.world/api-keys</a>. No Jobo account yet? <a href="https://enterprise.jobo.world/register?src=n8n" target="_blank">Sign up free</a> first — the $5 free starting balance is enough to try the node.',
     },
     {
       displayName: "Base URL",

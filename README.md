@@ -52,8 +52,8 @@ not per request.
 ## Credentials
 
 One field: your Jobo API key (`jbe_live_…` or `jbe_test_…`), from
-[enterprise.jobo.world/api-keys](https://enterprise.jobo.world/api-keys). No Jobo account yet?
-[Sign up free](https://enterprise.jobo.world/register) first — the $5 free starting balance is
+[enterprise.jobo.world/api-keys](https://enterprise.jobo.world/api-keys?src=n8n). No Jobo account yet?
+[Sign up free](https://enterprise.jobo.world/register?src=n8n) first — the $5 free starting balance is
 enough to try the node. The credential test issues a
 `page_size=1` search — deliberately, because the balance precheck prices the *requested* page size, so a
 larger probe can require more remaining shared allowance or wallet cover just to verify a key.

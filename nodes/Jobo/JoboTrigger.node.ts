@@ -407,7 +407,7 @@ function toPollError(ctx: IPollFunctions, error: unknown) {
       httpCode: "402",
       message: "Jobo wallet balance too low",
       description:
-        "Top up your wallet at https://enterprise.jobo.world/ or narrow the filters. Note the balance check prices the requested page size, so a retry fails the same way.",
+        "Top up your wallet at https://enterprise.jobo.world/credits?src=n8n or narrow the filters. Note the balance check prices the requested page size, so a retry fails the same way.",
     });
   }
   if (error instanceof Error && /narrowing filter/i.test(error.message)) {
