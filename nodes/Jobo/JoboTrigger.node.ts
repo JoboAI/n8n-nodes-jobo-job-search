@@ -11,24 +11,28 @@ import {
 } from "n8n-workflow";
 
 import {
-  EMPLOYMENT_TYPES,
-  EXPERIENCE_LEVELS,
   InsufficientCreditsError,
   MIN_POLL_INTERVAL_SECONDS,
-  WORK_MODELS,
   WindowOverflowError,
   assertHasNarrowingFilter,
   poll,
   shouldSkipPoll,
-  type JobSearchParams,
+  toJobSearchBody,
+  type JobSearchFilters,
   type PollState,
 } from "@jobo-ai/connector-core";
 
 import { joboClient } from "./transport";
-import { listSearch, loadOptions, resourceLocatorValue } from "./methods";
-
-const optionsFrom = (values: readonly string[]) =>
-  values.map((value) => ({ name: value.replace(/(^|-)([a-z])/g, (m) => m.toUpperCase()), value }));
+import { listSearch, loadOptions } from "./methods";
+import {
+  V2_AND_LATER,
+  companyFilter,
+  occupationFilter,
+  searchExcludeOptions,
+  searchFilterOptions,
+  searchOutputOptions,
+} from "./descriptions";
+import { buildSearchFilters, includeFields } from "./params";
 
 /**
  * "Fetch Test Event" preview window. n8n discards workflow static data for
@@ -76,7 +80,9 @@ export class JoboTrigger implements INodeType {
     // hairline so the squircle does not dissolve into a dark canvas.
     icon: { light: "file:jobo.svg", dark: "file:jobo-dark.svg" },
     group: ["trigger"],
-    version: 1,
+    // Version 2 turns Filters > Skills into a picker, as on the Jobo node.
+    version: [1, 2],
+    defaultVersion: 2,
     subtitle: '={{"New job matching filters"}}',
     description: "Starts the workflow when a new job matching your filters is indexed",
     defaults: { name: "Jobo Trigger" },
@@ -93,7 +99,7 @@ export class JoboTrigger implements INodeType {
         // The filter names here are exactly connector-core's
         // NARROWING_FILTER_KEYS — keep the two in sync.
         displayName:
-          "At least one narrowing filter is required: q, location, sources, skills, or industries. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs); cost depends on matches, not poll frequency. Jobo checks at most once per Minimum Interval below, so setting Poll Times faster than that changes nothing.",
+          "At least one narrowing filter is required: Query, Location, Companies, Occupations, Sources, Skills, Industries, Job Categories or Job Subcategories. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs); cost depends on matches, not poll frequency. Jobo checks at most once per Minimum Interval below, so setting Poll Times faster than that changes nothing.",
         name: "costNotice",
         type: "notice",
         default: "",
@@ -113,7 +119,8 @@ export class JoboTrigger implements INodeType {
         type: "string",
         default: "",
         placeholder: "e.g. senior rust engineer",
-        description: "Free-text search across job title and description",
+        description:
+          'Free-text search across job title and, unless Search Descriptions is off, the summary and skills. Wrap a phrase in double quotes for an exact title match; prefix a word with "-" to exclude it.',
       },
       // Top-level rather than inside the Filters collection, matching the Jobo
       // node: a resourceLocator inside a `collection` renders inconsistently
@@ -142,91 +149,44 @@ export class JoboTrigger implements INodeType {
       },
       // discovered_after / discovered_before are deliberately absent: the poll
       // watermark owns discovered_after, and a user-supplied value would fight
-      // the incremental sync.
+      // the incremental sync. Sort is absent for the same reason: polls walk
+      // oldest-first so a large window resumes where it stopped.
       {
         displayName: "Filters",
         name: "filters",
         type: "collection",
         placeholder: "Add Filter",
         default: {},
-        options: [
-          {
-            displayName: "Employment Type",
-            name: "employment_type",
-            type: "multiOptions",
-            options: optionsFrom(EMPLOYMENT_TYPES),
-            default: [],
-          },
-          {
-            displayName: "Experience Level",
-            name: "experience_level",
-            type: "multiOptions",
-            options: optionsFrom(EXPERIENCE_LEVELS),
-            default: [],
-          },
-          {
-            displayName: "Industry Names or IDs",
-            name: "industries",
-            type: "multiOptions",
-            typeOptions: { loadOptionsMethod: "getIndustries" },
-            default: [],
-            description:
-              'Restrict to companies in specific industries. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-          },
-          {
-            displayName: "Max Salary (USD)",
-            name: "max_salary_usd",
-            type: "number",
-            default: 0,
-            description: "Only matches jobs whose employer published a salary range",
-          },
-          {
-            displayName: "Min Salary (USD)",
-            name: "min_salary_usd",
-            type: "number",
-            default: 0,
-            description: "Only matches jobs whose employer published a salary range",
-          },
-          {
-            displayName: "Posted After",
-            name: "posted_after",
-            type: "dateTime",
-            default: "",
-            description: "Only jobs the employer posted on or after this time",
-          },
-          {
-            displayName: "Search Descriptions",
-            name: "search_description",
-            type: "boolean",
-            default: true,
-            description:
-              "Whether to match the query against full job descriptions as well as titles. Turn this off for title-only matching.",
-          },
-          {
-            displayName: "Skills",
-            name: "skills",
-            type: "string",
-            typeOptions: { multipleValues: true, multipleValueButtonText: "Add skill" },
-            default: [],
-            description: "Require one or more skills, e.g. Python, Kubernetes",
-          },
-          {
-            displayName: "Source Names or IDs",
-            name: "sources",
-            type: "multiOptions",
-            typeOptions: { loadOptionsMethod: "getSources" },
-            default: [],
-            description:
-              'Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-          },
-          {
-            displayName: "Work Model",
-            name: "work_model",
-            type: "multiOptions",
-            options: optionsFrom(WORK_MODELS),
-            default: [],
-          },
-        ],
+        displayOptions: { show: { "@version": [1] } },
+        options: searchFilterOptions(1, true),
+      },
+      {
+        displayName: "Filters",
+        name: "filters",
+        type: "collection",
+        placeholder: "Add Filter",
+        default: {},
+        displayOptions: { show: { "@version": V2_AND_LATER } },
+        options: searchFilterOptions(2, true),
+      },
+      companyFilter({}),
+      occupationFilter({}),
+      {
+        displayName: "Exclude",
+        name: "exclude",
+        type: "collection",
+        placeholder: "Add Exclusion",
+        default: {},
+        description: "Leave out jobs matching any of these",
+        options: searchExcludeOptions(),
+      },
+      {
+        displayName: "Options",
+        name: "options",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        options: searchOutputOptions(true),
       },
     ],
   };
@@ -240,22 +200,18 @@ export class JoboTrigger implements INodeType {
     // same window. Retrying only adds load to the limiter that just said no.
     const client = await joboClient(this, { retry: { retryRateLimit: false } });
 
-    const raw = this.getNodeParameter("filters", {}) as Record<string, unknown>;
-    const filters: JobSearchParams = {
-      q: (this.getNodeParameter("q", "") as string) || undefined,
-      location: resourceLocatorValue(this.getNodeParameter("location", "")),
-      sources: list(raw.sources),
-      work_model: list(raw.work_model),
-      employment_type: list(raw.employment_type),
-      experience_level: list(raw.experience_level),
-      skills: list(raw.skills),
-      industries: list(raw.industries),
-      min_salary_usd: positive(raw.min_salary_usd),
-      max_salary_usd: positive(raw.max_salary_usd),
-      posted_after: (raw.posted_after as string) || undefined,
-      // true is the API default, so only the non-default is worth sending.
-      search_description: raw.search_description === false ? false : undefined,
-    };
+    const options = this.getNodeParameter("options", {}) as Record<string, unknown>;
+    const filters: JobSearchFilters = buildSearchFilters({
+      q: this.getNodeParameter("q", ""),
+      location: this.getNodeParameter("location", ""),
+      filters: this.getNodeParameter("filters", {}) as Record<string, unknown>,
+      exclude: this.getNodeParameter("exclude", {}) as Record<string, unknown>,
+      companyFilter: this.getNodeParameter("companyFilter", {}),
+      occupationFilter: this.getNodeParameter("occupationFilter", {}),
+      // No sort here: the poller owns the order.
+      options: { description_format: options.description_format },
+    });
+    const fields = includeFields(options);
 
     // Workflow static data is the only durable store a trigger has. The
     // watermark MUST live here rather than being recomputed as "now minus one
@@ -282,12 +238,17 @@ export class JoboTrigger implements INodeType {
         assertHasNarrowingFilter(filters as Record<string, unknown>);
 
         const since = new Date(Date.now() - SAMPLE_LOOKBACK_SECONDS * 1000).toISOString();
-        const { data } = await client.searchJobs({
-          ...filters,
-          discovered_after: since,
-          page: 1,
-          page_size: SAMPLE_PAGE_SIZE,
-        });
+        const { data } = await client.searchJobsAdvanced(
+          toJobSearchBody(
+            { ...filters, discovered_after: since, sort: "discovered_desc" },
+            {
+              page: 1,
+              page_size: SAMPLE_PAGE_SIZE,
+              include_facets: [],
+              ...(fields ? { include_fields: fields } : {}),
+            },
+          ),
+        );
         sample = data.jobs.map((job) => ({ json: job as unknown as IDataObject }));
       } catch (error) {
         throw toPollError(this, error);
@@ -345,7 +306,7 @@ export class JoboTrigger implements INodeType {
     staticData[LAST_POLLED_AT_KEY] = new Date().toISOString();
 
     try {
-      const result = await poll(client, filters, state);
+      const result = await poll(client, filters, state, fields ? { includeFields: fields } : {});
       staticData.joboPollState = result.state;
 
       // Seeding run: record the watermark, emit nothing. n8n treats a trigger's
@@ -375,7 +336,8 @@ export class JoboTrigger implements INodeType {
           (balance != null ? `, wallet ${balance} credits` : "") +
           (quotaRemaining != null
             ? `, included jobs ${quotaRemaining}${quotaLimit != null ? `/${quotaLimit}` : ""} remaining`
-            : ""),
+            : "") +
+          (result.backlog ? `; about ${result.remaining} more matched and arrive on the next polls, oldest first` : ""),
       );
 
       return [result.jobs.map((job) => ({ json: job as unknown as IDataObject }))];
@@ -399,7 +361,7 @@ function toPollError(ctx: IPollFunctions, error: unknown) {
   if (error instanceof WindowOverflowError) {
     return new NodeOperationError(ctx.getNode(), error.message, {
       description:
-        "Add or tighten a filter so fewer jobs match per interval, or switch to a Jobo Outbound Feed. Search results are relevance-ordered with no sort option, so a partial page cannot be resumed safely — Jobo stops rather than silently skipping jobs. Shortening the Minimum Interval does not help below its floor.",
+        "Polls walk new jobs oldest first and normally drain a large backlog over several polls. This stops only when more matching jobs share one indexing second than a single poll returns, because moving past them would skip some. Add or tighten a filter, or switch to a Jobo Outbound Feed.",
     });
   }
   if (error instanceof InsufficientCreditsError) {
@@ -416,14 +378,4 @@ function toPollError(ctx: IPollFunctions, error: unknown) {
   // Everything unclassified is an API/transport failure. NodeApiError keeps the
   // original message and status while attributing the failure to this node.
   return new NodeApiError(ctx.getNode(), error as JsonObject);
-}
-
-function list(value: unknown): string[] | undefined {
-  if (Array.isArray(value) && value.length > 0) return value as string[];
-  return undefined;
-}
-
-/** Zero is the n8n default for an unset number field, so it must not be sent. */
-function positive(value: unknown): number | undefined {
-  return typeof value === "number" && value > 0 ? value : undefined;
 }

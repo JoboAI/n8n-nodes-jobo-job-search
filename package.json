@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-jobo-job-search",
-  "version": "0.2.0",
-  "description": "Job search, job board and career site data for n8n — search and sync live job listings from 200+ ATS platforms via Jobo.",
+  "version": "0.3.0",
+  "description": "Job search, job board and career site data for n8n \u2014 search and sync live job listings from 200+ ATS platforms via Jobo.",
   "keywords": [
     "n8n-community-node-package",
     "jobs",
@@ -34,7 +34,7 @@
     "build": "tsup && node scripts/copy-icons.mjs",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/verify-constraints.mjs && node scripts/verify-filters.mjs && npm run lint",
+    "test": "node scripts/verify-constraints.mjs && node scripts/verify-filters.mjs && vitest run && npm run lint",
     "verify": "node scripts/verify-constraints.mjs",
     "scan": "npx --yes @n8n/scan-community-package@beta n8n-nodes-jobo-job-search",
     "lint": "eslint --no-error-on-unmatched-pattern package.json index.js \"credentials/**/*.{js,ts,json}\" \"nodes/**/*.{js,ts,json}\" \"dist/**/*.js\""
@@ -58,7 +58,7 @@
     "n8n-workflow": "*"
   },
   "devDependencies": {
-    "@jobo-ai/connector-core": "0.3.0",
+    "@jobo-ai/connector-core": "0.4.0",
     "@n8n/eslint-plugin-community-nodes": "0.27.0",
     "@types/node": "^20.11.0",
     "@typescript-eslint/parser": "^8.35.0",
@@ -66,7 +66,8 @@
     "eslint-plugin-n8n-nodes-base": "^1.16.7",
     "n8n-workflow": "^2.31.3",
     "tsup": "^8.0.1",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",

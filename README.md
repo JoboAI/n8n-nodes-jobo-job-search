@@ -11,6 +11,29 @@ Full setup and filter docs: [jobo.world/docs/connectors/n8n](https://jobo.world/
 
 **Jobo Trigger** — polls for newly indexed jobs matching your filters.
 
+Search and the trigger take every filter of `POST /api/jobs/search`; Get Many takes every filter of
+`POST /api/jobs/feed`:
+
+- **Companies** — a searchable picker (sends every Jobo company id of the company you pick), or a typed
+  company id, website domain or whole name. Include or exclude.
+- **Occupations** — searchable by occupation, subcategory or category name; plus Job Category and Job
+  Subcategory dropdowns with live job counts. Include or exclude.
+- **Skills, industries, sources, company categories** — dropdowns with live job counts. Include or exclude.
+- Location, languages, work model, employment type, experience level, salary, posted / discovered dates,
+  title-only matching; on the feed also company size, revenue, primary industry and agency jobs.
+- **Options** — sort (relevance or by discovery time), description format (Markdown or HTML), which heavy
+  fields to return, and **Simplify** (core fields plus the summary — the setting to use when an AI agent
+  calls the node as a tool).
+
+Every field description lists its accepted values and ID formats, so an AI agent using the node as a
+tool can fill them in.
+
+### Node versions
+
+New nodes are version 2, where Skills is a dropdown. Workflows saved with 0.2.0 or earlier keep version 1:
+Skills stays a free-entry list and every saved parameter means what it did. Everything else new appears in
+both versions.
+
 ## Installation
 
 In n8n, go to **Settings → Community nodes → Install**, enter the package name, and confirm:
@@ -31,8 +54,8 @@ Post newly discovered remote Rust jobs to Slack, checked hourly:
    the first run returns nothing and simply establishes the starting point.
 2. **Slack → Send Message** — map `{{ $json.title }}` and `{{ $json.apply_url }}` into the message.
 
-At least one narrowing filter (query, location, sources, skills or industries) is required on the
-trigger. Without one it matches every job Jobo indexes and fails loudly rather than running up a bill.
+At least one narrowing filter (query, location, companies, occupations, sources, skills, industries, job
+categories or job subcategories) is required on the trigger. Without one it matches every job Jobo indexes and fails loudly rather than running up a bill.
 
 ## Poll Times vs Minimum Interval
 
@@ -74,10 +97,11 @@ Two behaviours that follow from this and may surprise you:
 
 - **The first run returns nothing.** It records a starting point. n8n treats a trigger's first run as a
   sample, and backfilling the whole index would be both surprising and expensive.
-- **A too-broad filter fails loudly** rather than quietly. `GET /api/jobs` is relevance-ordered with no
-  sort parameter, so a partial page walk is an arbitrary subset — advancing past it would drop jobs
-  silently, and holding the watermark would re-bill the same window forever. The trigger stops and tells
-  you to narrow the filter.
+- **A burst arrives over several polls.** One poll returns at most 250 jobs. Polls read new jobs oldest
+  first (`sort: discovered_asc`, keyed on the immutable first-indexed time), so a poll that stops at that
+  cap leaves a clean resume point, and the next poll carries on from it. The only window that cannot be
+  resumed — more than 250 matching jobs indexed in the same second — fails loudly rather than skipping
+  jobs.
 
 For high volume or push-style delivery, use a Jobo Outbound Feed instead. It uses the same
 shared allowance/normal job pricing, or has no per-job charge on Unlimited.

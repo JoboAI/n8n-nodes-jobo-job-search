@@ -9,21 +9,26 @@ import {
   type INodeTypeDescription,
 } from "n8n-workflow";
 
-import {
-  EMPLOYMENT_TYPES,
-  EXPERIENCE_LEVELS,
-  InsufficientCreditsError,
-  WORK_MODELS,
-  type JobFeedParams,
-  type JobSearchParams,
-} from "@jobo-ai/connector-core";
+import { InsufficientCreditsError, toJobSearchBody, type JobFeedParams } from "@jobo-ai/connector-core";
 
 import { joboClient } from "./transport";
-import { listSearch, loadOptions, resourceLocatorValue } from "./methods";
+import { listSearch, loadOptions } from "./methods";
+import {
+  V2_AND_LATER,
+  companyFilter,
+  feedExcludeOptions,
+  feedFilterOptions,
+  feedOutputOptions,
+  occupationFilter,
+  searchExcludeOptions,
+  searchFilterOptions,
+  searchOutputOptions,
+} from "./descriptions";
+import { buildFeedParams, buildSearchFilters, includeFields } from "./params";
 
-/** Build n8n dropdown options from connector-core's canonical value lists. */
-const optionsFrom = (values: readonly string[]) =>
-  values.map((value) => ({ name: value.replace(/(^|-)([a-z])/g, (m) => m.toUpperCase()), value }));
+const SEARCH = { resource: ["job"], operation: ["search"] };
+const FEED = { resource: ["job"], operation: ["feed"] };
+const SEARCH_OR_FEED = { resource: ["job"], operation: ["search", "feed"] };
 
 export class Jobo implements INodeType {
   description: INodeTypeDescription = {
@@ -35,7 +40,11 @@ export class Jobo implements INodeType {
     // hairline so the squircle does not dissolve into a dark canvas.
     icon: { light: "file:jobo.svg", dark: "file:jobo-dark.svg" },
     group: ["transform"],
-    version: 1,
+    // Version 2 turns Filters > Skills from a free-text list into a picker.
+    // Version 1 keeps the saved shape; every other addition (companies,
+    // occupations, excludes, options) is additive and shows in both.
+    version: [1, 2],
+    defaultVersion: 2,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
     description: "Search and sync live job listings from 200+ ATS platforms",
     defaults: { name: "Jobo" },
@@ -75,7 +84,8 @@ export class Jobo implements INodeType {
           {
             name: "Search",
             value: "search",
-            description: "Search jobs with filters. Included plan jobs first, then the pay-as-you-go rate.",
+            description:
+              "Search live jobs by keyword, location, company, occupation, skills and more. Billed per job returned: included plan jobs first, then the pay-as-you-go rate.",
             action: "Search jobs",
           },
           {
@@ -107,6 +117,8 @@ export class Jobo implements INodeType {
         type: "string",
         required: true,
         default: "",
+        placeholder: "e.g. 3f2b8c1e-7d4a-4b9e-9c1f-2a6e5d8b0c47",
+        description: "The job's Jobo ID (a GUID), as returned by Search or Get Many",
         displayOptions: { show: { resource: ["job"], operation: ["get"] } },
       },
       {
@@ -115,9 +127,10 @@ export class Jobo implements INodeType {
         type: "string",
         default: "",
         placeholder: "e.g. senior rust engineer",
-        description: "Free-text search across job title and description",
+        description:
+          'Free-text search across job title and, unless Search Descriptions is off, the summary and skills. Wrap a phrase in double quotes for an exact title match; prefix a word with "-" to exclude it (e.g. "data engineer -senior").',
         hint: "Billed per job returned beyond any included jobs — narrow filters to control usage.",
-        displayOptions: { show: { resource: ["job"], operation: ["search"] } },
+        displayOptions: { show: SEARCH },
       },
       // Location lives OUTSIDE the Filters collection deliberately: a
       // resourceLocator rendered inside a `collection` displays inconsistently
@@ -129,8 +142,9 @@ export class Jobo implements INodeType {
         name: "location",
         type: "resourceLocator",
         default: { mode: "list", value: "" },
-        description: "Only jobs in this location. Leave empty to search everywhere.",
-        displayOptions: { show: { resource: ["job"], operation: ["search"] } },
+        description:
+          'Only jobs in this location: a city, region or country such as "Berlin, Germany", "California" or "United States". Leave empty to search everywhere.',
+        displayOptions: { show: SEARCH },
         modes: [
           {
             displayName: "From List",
@@ -154,7 +168,7 @@ export class Jobo implements INodeType {
         default: false,
         description: "Whether to return all results or only up to a given limit",
         hint: "Billed per job returned beyond any included jobs — narrow filters to control usage.",
-        displayOptions: { show: { resource: ["job"], operation: ["search", "feed"] } },
+        displayOptions: { show: SEARCH_OR_FEED },
       },
       {
         displayName: "Limit",
@@ -167,8 +181,8 @@ export class Jobo implements INodeType {
           show: { resource: ["job"], operation: ["search", "feed"], returnAll: [false] },
         },
       },
-      // Search and feed are different wire surfaces (singular query keys vs
-      // plural body keys), so each operation gets its own collection rather
+      // Search and feed are different wire surfaces (singular filter keys vs
+      // plural body keys), so each operation gets its own collections rather
       // than one collection whose fields are silently ignored by the other.
       {
         displayName: "Filters",
@@ -176,104 +190,17 @@ export class Jobo implements INodeType {
         type: "collection",
         placeholder: "Add Filter",
         default: {},
-        displayOptions: { show: { resource: ["job"], operation: ["search"] } },
-        options: [
-          {
-            displayName: "Discovered After",
-            name: "discovered_after",
-            type: "dateTime",
-            default: "",
-            description: "Only jobs Jobo first indexed on or after this time",
-          },
-          {
-            displayName: "Discovered Before",
-            name: "discovered_before",
-            type: "dateTime",
-            default: "",
-            description: "Only jobs Jobo first indexed on or before this time",
-          },
-          {
-            displayName: "Employment Type",
-            name: "employment_type",
-            type: "multiOptions",
-            options: optionsFrom(EMPLOYMENT_TYPES),
-            default: [],
-          },
-          {
-            displayName: "Experience Level",
-            name: "experience_level",
-            type: "multiOptions",
-            options: optionsFrom(EXPERIENCE_LEVELS),
-            default: [],
-          },
-          {
-            displayName: "Industry Names or IDs",
-            name: "industries",
-            type: "multiOptions",
-            typeOptions: { loadOptionsMethod: "getIndustries" },
-            default: [],
-            description:
-              'Restrict to companies in specific industries. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-          },
-          {
-            displayName: "Max Salary (USD)",
-            name: "max_salary_usd",
-            type: "number",
-            default: 0,
-            description: "Only matches jobs whose employer published a salary range",
-          },
-          {
-            displayName: "Min Salary (USD)",
-            name: "min_salary_usd",
-            type: "number",
-            default: 0,
-            description: "Only matches jobs whose employer published a salary range",
-          },
-          {
-            displayName: "Posted After",
-            name: "posted_after",
-            type: "dateTime",
-            default: "",
-          },
-          {
-            displayName: "Posted Before",
-            name: "posted_before",
-            type: "dateTime",
-            default: "",
-          },
-          {
-            displayName: "Search Descriptions",
-            name: "search_description",
-            type: "boolean",
-            default: true,
-            description:
-              "Whether to match the query against full job descriptions as well as titles. Turn this off for title-only matching.",
-          },
-          {
-            displayName: "Skills",
-            name: "skills",
-            type: "string",
-            typeOptions: { multipleValues: true, multipleValueButtonText: "Add skill" },
-            default: [],
-            description: "Require one or more skills, e.g. Python, Kubernetes",
-          },
-          {
-            displayName: "Source Names or IDs",
-            name: "sources",
-            type: "multiOptions",
-            typeOptions: { loadOptionsMethod: "getSources" },
-            default: [],
-            description:
-              'Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-          },
-          {
-            displayName: "Work Model",
-            name: "work_model",
-            type: "multiOptions",
-            options: optionsFrom(WORK_MODELS),
-            default: [],
-          },
-        ],
+        displayOptions: { show: { ...SEARCH, "@version": [1] } },
+        options: searchFilterOptions(1, false),
+      },
+      {
+        displayName: "Filters",
+        name: "filters",
+        type: "collection",
+        placeholder: "Add Filter",
+        default: {},
+        displayOptions: { show: { ...SEARCH, "@version": V2_AND_LATER } },
+        options: searchFilterOptions(2, false),
       },
       {
         displayName: "Filters",
@@ -281,90 +208,48 @@ export class Jobo implements INodeType {
         type: "collection",
         placeholder: "Add Filter",
         default: {},
-        displayOptions: { show: { resource: ["job"], operation: ["feed"] } },
-        options: [
-          {
-            displayName: "Employment Types",
-            name: "employment_types",
-            type: "multiOptions",
-            options: optionsFrom(EMPLOYMENT_TYPES),
-            default: [],
-          },
-          {
-            displayName: "Experience Levels",
-            name: "experience_levels",
-            type: "multiOptions",
-            options: optionsFrom(EXPERIENCE_LEVELS),
-            default: [],
-          },
-          {
-            displayName: "Locations",
-            name: "locations",
-            type: "fixedCollection",
-            typeOptions: { multipleValues: true },
-            placeholder: "Add Location",
-            default: {},
-            description: "Restrict to specific locations. Leave a part empty to match any value for it.",
-            options: [
-              {
-                displayName: "Location",
-                name: "location",
-                values: [
-                  {
-                    displayName: "Country",
-                    name: "country",
-                    type: "string",
-                    default: "",
-                    placeholder: "e.g. Germany",
-                  },
-                  {
-                    displayName: "Region",
-                    name: "region",
-                    type: "string",
-                    default: "",
-                    placeholder: "e.g. Berlin",
-                  },
-                  {
-                    displayName: "City",
-                    name: "city",
-                    type: "string",
-                    default: "",
-                    placeholder: "e.g. Berlin",
-                  },
-                ],
-              },
-            ],
-          },
-          {
-            displayName: "Posted After",
-            name: "posted_after",
-            type: "dateTime",
-            default: "",
-          },
-          {
-            displayName: "Source Names or IDs",
-            name: "sources",
-            type: "multiOptions",
-            typeOptions: { loadOptionsMethod: "getSources" },
-            default: [],
-            description:
-              'Restrict to specific ATS sources, e.g. greenhouse, lever_co, ashby. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
-          },
-          {
-            displayName: "Updated After",
-            name: "updated_after",
-            type: "dateTime",
-            default: "",
-            description: "Only jobs created or modified on or after this time",
-          },
-          {
-            displayName: "Work Models",
-            name: "work_models",
-            type: "multiOptions",
-            options: optionsFrom(WORK_MODELS),
-            default: [],
-          },
-        ],
+        displayOptions: { show: FEED },
+        options: feedFilterOptions(),
+      },
+      companyFilter(SEARCH_OR_FEED),
+      occupationFilter(SEARCH_OR_FEED),
+      {
+        displayName: "Exclude",
+        name: "exclude",
+        type: "collection",
+        placeholder: "Add Exclusion",
+        default: {},
+        description: "Leave out jobs matching any of these",
+        displayOptions: { show: SEARCH },
+        options: searchExcludeOptions(),
+      },
+      {
+        displayName: "Exclude",
+        name: "feedExclude",
+        type: "collection",
+        placeholder: "Add Exclusion",
+        default: {},
+        description: "Leave out jobs matching any of these",
+        displayOptions: { show: FEED },
+        options: feedExcludeOptions(),
+      },
+      {
+        displayName: "Options",
+        name: "options",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        displayOptions: { show: SEARCH },
+        options: searchOutputOptions(false),
+      },
+      {
+        displayName: "Options",
+        name: "options",
+        type: "collection",
+        placeholder: "Add Option",
+        default: {},
+        displayOptions: { show: FEED },
+        options: feedOutputOptions(),
       },
       {
         displayName: "Expired Since",
@@ -393,6 +278,8 @@ export class Jobo implements INodeType {
         type: "string",
         required: true,
         default: "",
+        placeholder: "e.g. 0d5f8b4e-1111-4c2a-9a55-2f6d1f0e7a10",
+        description: "The company's Jobo ID (a GUID), as found on each job's company",
         displayOptions: { show: { resource: ["company"] } },
       },
 
@@ -434,15 +321,33 @@ export class Jobo implements INodeType {
         if (resource === "job" && operation === "search") {
           const returnAll = this.getNodeParameter("returnAll", i) as boolean;
           const limit = returnAll ? Number.POSITIVE_INFINITY : (this.getNodeParameter("limit", i) as number);
-          const filters = buildSearchFilters(this.getNodeParameter("filters", i, {}) as Record<string, unknown>);
-          filters.q = (this.getNodeParameter("q", i, "") as string) || undefined;
-          filters.location = resourceLocatorValue(this.getNodeParameter("location", i, ""));
+          const options = this.getNodeParameter("options", i, {}) as Record<string, unknown>;
+          const filters = buildSearchFilters({
+            q: this.getNodeParameter("q", i, ""),
+            location: this.getNodeParameter("location", i, ""),
+            filters: this.getNodeParameter("filters", i, {}) as Record<string, unknown>,
+            exclude: this.getNodeParameter("exclude", i, {}) as Record<string, unknown>,
+            companyFilter: this.getNodeParameter("companyFilter", i, {}),
+            occupationFilter: this.getNodeParameter("occupationFilter", i, {}),
+            options,
+          });
+          const fields = includeFields(options);
 
+          // POST /api/jobs/search rather than GET /api/jobs: only the body
+          // form takes companies and the exclude half of each filter.
           let page = 1;
           let collected = 0;
           for (;;) {
             const pageSize = Math.min(100, returnAll ? 100 : limit - collected);
-            const { data } = await client.searchJobs({ ...filters, page, page_size: pageSize });
+            const { data } = await client.searchJobsAdvanced(
+              toJobSearchBody(filters, {
+                page,
+                page_size: pageSize,
+                include_facets: [],
+                ...(fields ? { include_fields: fields } : {}),
+              }),
+            );
+            if (page === 1) logWarnings(this, data.warnings);
             for (const job of data.jobs) {
               out.push({ json: job as unknown as IDataObject, pairedItem: { item: i } });
               collected++;
@@ -456,7 +361,13 @@ export class Jobo implements INodeType {
         } else if (resource === "job" && operation === "feed") {
           const returnAll = this.getNodeParameter("returnAll", i) as boolean;
           const limit = returnAll ? Number.POSITIVE_INFINITY : (this.getNodeParameter("limit", i) as number);
-          const params = buildFeedFilters(this.getNodeParameter("feedFilters", i, {}) as Record<string, unknown>);
+          const params = buildFeedParams({
+            feedFilters: this.getNodeParameter("feedFilters", i, {}) as Record<string, unknown>,
+            feedExclude: this.getNodeParameter("feedExclude", i, {}) as Record<string, unknown>,
+            companyFilter: this.getNodeParameter("companyFilter", i, {}),
+            occupationFilter: this.getNodeParameter("occupationFilter", i, {}),
+            options: this.getNodeParameter("options", i, {}) as Record<string, unknown>,
+          });
 
           let cursor: string | undefined;
           let collected = 0;
@@ -518,66 +429,16 @@ export class Jobo implements INodeType {
   }
 }
 
-function list(value: unknown): string[] | undefined {
-  if (Array.isArray(value) && value.length > 0) return value as string[];
-  return undefined;
-}
-
-/** Zero is the n8n default for an unset number field, so it must not be sent. */
-function positive(value: unknown): number | undefined {
-  return typeof value === "number" && value > 0 ? value : undefined;
-}
-
-function buildSearchFilters(raw: Record<string, unknown>): JobSearchParams {
-  return {
-    sources: list(raw.sources),
-    work_model: list(raw.work_model),
-    employment_type: list(raw.employment_type),
-    experience_level: list(raw.experience_level),
-    skills: list(raw.skills),
-    industries: list(raw.industries),
-    min_salary_usd: positive(raw.min_salary_usd),
-    max_salary_usd: positive(raw.max_salary_usd),
-    posted_after: (raw.posted_after as string) || undefined,
-    posted_before: (raw.posted_before as string) || undefined,
-    discovered_after: (raw.discovered_after as string) || undefined,
-    discovered_before: (raw.discovered_before as string) || undefined,
-    // true is the API default, so only the non-default is worth sending.
-    search_description: raw.search_description === false ? false : undefined,
-  };
-}
-
 /**
- * The Locations fixedCollection arrives as `{ location: [{country, region,
- * city}, …] }`. Blank parts are dropped (the feed treats a missing part as
- * a wildcard) and all-blank rows are discarded entirely.
+ * Warnings the API attaches to a search, e.g. `companies_unmatched` when a
+ * typed company name or domain matched nothing. The search still succeeds,
+ * so the run log is where a user (or an agent's operator) learns why a
+ * filter returned fewer jobs than expected.
  */
-function feedLocations(value: unknown): JobFeedParams["locations"] {
-  const rows = (value as { location?: Array<Record<string, string>> } | undefined)?.location;
-  if (!Array.isArray(rows)) return undefined;
-
-  const locations = rows
-    .map((row) => ({
-      country: row.country?.trim() || undefined,
-      region: row.region?.trim() || undefined,
-      city: row.city?.trim() || undefined,
-    }))
-    .filter((location) => location.country || location.region || location.city);
-
-  return locations.length > 0 ? locations : undefined;
-}
-
-function buildFeedFilters(raw: Record<string, unknown>): JobFeedParams {
-  return {
-    locations: feedLocations(raw.locations),
-    sources: list(raw.sources),
-    work_models: list(raw.work_models),
-    employment_types: list(raw.employment_types),
-    experience_levels: list(raw.experience_levels),
-    posted_after: (raw.posted_after as string) || undefined,
-    updated_after: (raw.updated_after as string) || undefined,
-    stable_scan: true,
-  };
+function logWarnings(ctx: IExecuteFunctions, warnings: Array<{ code: string; message: string }> | null | undefined) {
+  for (const warning of warnings ?? []) {
+    ctx.logger.warn(`Jobo: ${warning.code}: ${warning.message}`);
+  }
 }
 
 /**
