@@ -20,6 +20,11 @@ function positive(value: unknown): number | undefined {
   return typeof value === "number" && value > 0 ? value : undefined;
 }
 
+/** A non-default `description_format`; Markdown is the API default and is not sent. */
+function descriptionFormat(value: unknown): "html" | "enhanced" | "enhanced_html" | undefined {
+  return value === "html" || value === "enhanced" || value === "enhanced_html" ? value : undefined;
+}
+
 function date(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
@@ -106,7 +111,7 @@ export function buildSearchFilters(values: SearchParameterValues): JobSearchFilt
     search_description: f.search_description === false ? false : undefined,
     sort:
       o.sort === "discovered_asc" || o.sort === "discovered_desc" || o.sort === "relevance" ? o.sort : undefined,
-    description_format: o.description_format === "html" ? "html" : undefined,
+    description_format: descriptionFormat(o.description_format),
   };
 }
 
@@ -208,7 +213,7 @@ export function buildFeedParams(values: FeedParameterValues): JobFeedParams {
     company_is_agency: f.company_is_agency === "true" ? true : f.company_is_agency === "false" ? false : undefined,
     posted_after: date(f.posted_after),
     include_reactivated: f.include_reactivated === true ? true : undefined,
-    description_format: o.description_format === "html" ? "html" : undefined,
+    description_format: descriptionFormat(o.description_format),
     updated_after: date(f.updated_after),
     stable_scan: true,
   };

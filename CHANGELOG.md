@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+
+Requires `@jobo-ai/connector-core` 0.5.0 (inlined at build time).
+
+### Added
+
+- **Enhanced descriptions (beta).** Description Format has two new choices, **Enhanced Markdown (Beta)** and
+  **Enhanced HTML (Beta)**, on Job → Search, Job → Get Feed and the Jobo Trigger. They return each job's
+  description with the same words and a consistent layout: real headings, lists, key facts as
+  `**Label:** value`, and the repeated title, buttons and tracking tags removed. The layout is automatic and
+  not guaranteed to be perfect. A job without an enhanced description returns its standard one.
+
 ## 0.3.0
 
 Requires `@jobo-ai/connector-core` 0.4.0 (inlined at build time) and the Jobo API's

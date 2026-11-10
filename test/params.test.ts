@@ -159,4 +159,11 @@ describe("feed parameters", () => {
       buildFeedParams({ feedFilters: { locations: { place: [{ place: { mode: "list", value: "Berlin" } }] } } }),
     ).toThrow(/not a picked place/);
   });
+
+  it("passes the enhanced description formats through and drops unknown ones", () => {
+    expect(buildSearchFilters({ options: { description_format: "enhanced" } }).description_format).toBe("enhanced");
+    expect(buildFeedParams({ options: { description_format: "enhanced_html" } }).description_format).toBe("enhanced_html");
+    expect(buildSearchFilters({ options: { description_format: "markdown" } }).description_format).toBeUndefined();
+    expect(buildFeedParams({ options: { description_format: "pdf" } }).description_format).toBeUndefined();
+  });
 });

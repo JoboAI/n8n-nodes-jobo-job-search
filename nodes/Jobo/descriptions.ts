@@ -352,9 +352,12 @@ const descriptionFormat: INodeProperties = {
   options: [
     { name: "Markdown", value: "markdown" },
     { name: "HTML", value: "html" },
+    { name: "Enhanced Markdown (Beta)", value: "enhanced" },
+    { name: "Enhanced HTML (Beta)", value: "enhanced_html" },
   ],
   default: "markdown",
-  description: "Format of each job's description: markdown (as stored) or html",
+  description:
+    "Format of each job's description: Markdown (as stored) or HTML. The enhanced formats (beta) return the same words with consistent headings, lists and key facts; a job without an enhanced description returns its standard one.",
 };
 
 /** Output options for search (`sort` is search only) and the trigger. */
