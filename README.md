@@ -21,7 +21,7 @@ Search and the trigger take every filter of `POST /api/jobs/search`; Get Many ta
 - **Skills, industries, sources, company categories** — dropdowns with live job counts. Include or exclude.
 - Location, languages, work model, employment type, experience level, salary, posted / discovered dates,
   title-only matching; on the feed also company size, revenue, primary industry and agency jobs.
-- **Options** — sort (relevance or by discovery time), description format (Markdown or HTML), which heavy
+- **Options** — sort (relevance or by discovery time), description format (Markdown, HTML, or the beta Enhanced and Enhanced HTML), which heavy
   fields to return, and **Simplify** (core fields plus the summary — the setting to use when an AI agent
   calls the node as a tool).
 
