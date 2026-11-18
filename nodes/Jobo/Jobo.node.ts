@@ -85,7 +85,7 @@ export class Jobo implements INodeType {
             name: "Search",
             value: "search",
             description:
-              "Search live jobs by keyword, location, company, occupation, skills and more. Billed per job returned: included plan jobs first, then the pay-as-you-go rate.",
+              "Search live jobs by keyword, location, company, occupation, skills and more. Billed per job returned: included plan jobs first, then the pay-as-you-go rate; no per-job charge on Unlimited.",
             action: "Search jobs",
           },
           {

@@ -99,7 +99,7 @@ export class JoboTrigger implements INodeType {
         // The filter names here are exactly connector-core's
         // NARROWING_FILTER_KEYS — keep the two in sync.
         displayName:
-          "At least one narrowing filter is required: Query, Location, Companies, Occupations, Sources, Skills, Industries, Job Categories or Job Subcategories. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs); cost depends on matches, not poll frequency. Jobo checks at most once per Minimum Interval below, so setting Poll Times faster than that changes nothing.",
+          "At least one narrowing filter is required: Query, Location, Companies, Occupations, Sources, Skills, Industries, Job Categories or Job Subcategories. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs), with no per-job charge on Unlimited; cost depends on matches, not poll frequency. Jobo checks at most once per Minimum Interval below, so setting Poll Times faster than that changes nothing.",
         name: "costNotice",
         type: "notice",
         default: "",

@@ -85,7 +85,8 @@ larger probe can require more remaining shared allowance or wallet cover just to
 
 Search is metered per job **returned**; an empty poll settles at zero jobs. A Job Search plan uses its
 shared allowance first, then its normal job rate. Without that plan, Search uses the signed-in direct
-rate (public list $3 per 1,000 jobs); The Unlimited plan does not cover Search. With a correctly persisted
+rate (public list $3 per 1,000 jobs). The Unlimited plan has no per-job charge on Search, within its request
+rate limits. With a correctly persisted
 watermark, **cost does not depend on how often the trigger polls**. Filter breadth is what drives the bill.
 
 The failure mode worth engineering against is a watermark that never advances. It looks correct in testing
