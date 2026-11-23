@@ -5,8 +5,14 @@
  * lints the provenance-attested source plus the published tarball, so it can
  * only tell you about a violation after you have shipped it — which is exactly
  * how 0.1.1 reached the verification queue with 38 errors. This config is a
- * copy of `buildScanConfig()` from that package (scanner/scanner.mjs), pinned
+ * copy of `buildScanConfig()` from that package (dist/scanner.js), pinned
  * to the same plugin versions, so the same rules run on `npm test`.
+ *
+ * Last matched to the scanner on 2026-11-23: scanner 0.44.0, with
+ * `@n8n/eslint-plugin-community-nodes` 0.41.0 and `eslint-plugin-n8n-nodes-base`
+ * 2.x. The scanner moves its plugin versions without notice and rules have
+ * reversed between them (`node-usable-as-tool` on triggers), so compare
+ * `npm view @n8n/scan-community-package@beta dependencies` before a release.
  *
  * Keep the three rule blocks and their `off` overrides identical to upstream.
  *

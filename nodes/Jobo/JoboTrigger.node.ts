@@ -87,10 +87,9 @@ export class JoboTrigger implements INodeType {
     description: "Starts the workflow when a new job matching your filters is indexed",
     defaults: { name: "Jobo Trigger" },
     polling: true,
-    // Inert on a trigger — n8n only exposes non-trigger nodes to agents — but
-    // the property is `true | UsableAsToolDescription`, so `true` is the only
-    // way to satisfy `@n8n/community-nodes/node-usable-as-tool`.
-    usableAsTool: true,
+    // No `usableAsTool`: a trigger cannot be invoked as an AI tool, and
+    // `@n8n/community-nodes/node-usable-as-tool` (0.39.0 onwards) rejects the
+    // property on trigger nodes. Before that the same rule required it.
     inputs: [],
     outputs: [NodeConnectionTypes.Main],
     credentials: [{ name: "joboApi", required: true }],

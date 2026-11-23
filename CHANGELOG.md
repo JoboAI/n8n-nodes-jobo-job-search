@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.1
+
+### Fixed
+
+- **The Jobo Trigger no longer declares `usableAsTool`.** n8n's verification scan now rejects that property
+  on trigger nodes, which cannot be called as AI tools. Nothing changes in a workflow: the property had no
+  effect on a trigger. The Jobo node is still usable as an AI tool.
+
 ## 0.4.0
 
 Requires `@jobo-ai/connector-core` 0.5.0 (inlined at build time).

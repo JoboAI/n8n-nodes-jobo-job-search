@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-jobo-job-search",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Job search, job board and career site data for n8n \u2014 search and sync live job listings from 200+ ATS platforms via Jobo.",
   "keywords": [
     "n8n-community-node-package",
@@ -59,11 +59,11 @@
   },
   "devDependencies": {
     "@jobo-ai/connector-core": "0.5.0",
-    "@n8n/eslint-plugin-community-nodes": "0.27.0",
+    "@n8n/eslint-plugin-community-nodes": "0.41.0",
     "@types/node": "^20.11.0",
-    "@typescript-eslint/parser": "^8.35.0",
+    "@typescript-eslint/parser": "^8.70.0",
     "eslint": "9.29.0",
-    "eslint-plugin-n8n-nodes-base": "^1.16.7",
+    "eslint-plugin-n8n-nodes-base": "^2.0.0",
     "n8n-workflow": "^2.31.3",
     "tsup": "^8.0.1",
     "typescript": "^5.3.3",
