@@ -28,6 +28,10 @@ Search and the trigger take every filter of `POST /api/jobs/search`; Get Many ta
 Every field description lists its accepted values and ID formats, so an AI agent using the node as a
 tool can fill them in.
 
+Search reaches at most the first 100,000 matches, the deepest the API pages; a Return All that stops there
+writes a warning to the n8n log. Get Many (Feed) has no such limit. Location → Geocode bills each successful
+lookup.
+
 ### Node versions
 
 New nodes are version 2, where Skills is a dropdown. Workflows saved with 0.2.0 or earlier keep version 1:
@@ -69,8 +73,9 @@ Setting *Poll Times* faster than *Minimum Interval* therefore changes nothing; s
 does work, since n8n simply never fires the tick.
 
 Nothing is missed either way. A poll returns everything indexed since the previous one, however
-long ago that was — which is also why the cost is unchanged: search is metered per job returned,
-not per request.
+long ago that was. Search is metered per job returned, not per request, and a poll that finds
+nothing new returns nothing once the newest matching job is more than five minutes old — so
+polling more often costs no more.
 
 ## Credentials
 
@@ -83,7 +88,7 @@ larger probe can require more remaining shared allowance or wallet cover just to
 
 ## Cost, and the one mistake to avoid
 
-Search is metered per job **returned**; an empty poll settles at zero jobs. A Job Search plan uses its
+Search is metered per job **returned**; a poll that returns nothing costs nothing. A Job Search plan uses its
 shared allowance first, then its normal job rate. Without that plan, Search uses the signed-in direct
 rate (public list $3 per 1,000 jobs). The Unlimited plan has no per-job charge on Search, within its request
 rate limits. With a correctly persisted
@@ -94,10 +99,14 @@ The failure mode worth engineering against is a watermark that never advances. I
 persists its watermark in workflow static data rather than recomputing a relative window, and refuses to
 run without at least one narrowing filter.
 
-Two behaviours that follow from this and may surprise you:
+Three behaviours that follow from this and may surprise you:
 
 - **The first run returns nothing.** It records a starting point. n8n treats a trigger's first run as a
   sample, and backfilling the whole index would be both surprising and expensive.
+- **The poll after new jobs re-reads one minute.** A job can be indexed a few seconds behind the newest one
+  a poll saw, so while the newest matching job is less than five minutes old, the next poll reads again,
+  and bills, the matching jobs indexed in the minute up to it. They are not emitted twice. Once the newest
+  job is older than that, polls start just after it, and a poll that finds nothing new is free.
 - **A burst arrives over several polls.** One poll returns at most 250 jobs. Polls read new jobs oldest
   first (`sort: discovered_asc`, keyed on the immutable first-indexed time), so a poll that stops at that
   cap leaves a clean resume point, and the next poll carries on from it. The only window that cannot be

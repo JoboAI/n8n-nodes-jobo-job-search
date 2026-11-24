@@ -99,7 +99,9 @@ for (const { name, pattern } of banned) {
 
 // 8. n8n-workflow must stay external — bundling it would ship a second copy of
 //    the host's own runtime.
-const nodeBundles = bundles.filter((f) => f.includes("nodes/"));
+//    Either separator: on Windows `walk` returns backslashed paths, and a
+//    forward-slash match finds no bundles and fails the check.
+const nodeBundles = bundles.filter((f) => /[\\/]nodes[\\/]/.test(f));
 const externalised = nodeBundles.every((file) => /require\(["']n8n-workflow["']\)/.test(readFileSync(file, "utf8")));
 check("n8n-workflow required externally, not bundled", nodeBundles.length > 0 && externalised);
 

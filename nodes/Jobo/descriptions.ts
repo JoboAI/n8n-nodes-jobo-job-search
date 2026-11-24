@@ -457,7 +457,7 @@ export function feedFilterOptions(): INodeProperties[] {
       placeholder: "Add Location",
       default: {},
       description:
-        "Only jobs in any of these locations. Search for a place, or enter its parts — leave a part empty to match any value for it.",
+        "Only jobs in any of these locations. Search for a place, or enter its parts. Country is required whenever Region or City is set; leave Region and City empty to match the whole country.",
       options: [
         {
           displayName: "Location",
@@ -469,7 +469,8 @@ export function feedFilterOptions(): INodeProperties[] {
               type: "string",
               default: "",
               placeholder: "e.g. Germany",
-              description: 'Country name or ISO code, e.g. "Germany", "DE", "United States"',
+              description:
+                'Country name or ISO code, e.g. "Germany", "DE", "United States". Required when Region or City is set.',
             },
             {
               displayName: "Region",

@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.0
+
+Requires `@jobo-ai/connector-core` 0.6.0 (inlined at build time).
+
+### Changed
+
+- **A quiet trigger poll is free.** Once the newest matching job is more than five minutes old by the API's
+  clock, the next poll starts just after it, so a poll that finds nothing new returns nothing and costs
+  nothing. Right after new jobs arrive, one further poll still reads again, and bills, the matching jobs
+  indexed in the minute up to the newest one, so a late-indexed job is not missed; they are not emitted
+  twice. Before, every poll re-read and billed that minute.
+- **A trigger with no narrowing filter fails when it is switched on**, not one interval later.
+- **Get Many (Feed) waits up to 130 seconds for a page**, as the feed asks, instead of 30, and retries a page
+  that timed out or lost its connection.
+- **Search, Geocode and the trigger are not retried after a timeout, a dropped connection or a 500**, because
+  the request may already have been billed. Search and Geocode are still retried on a 429, and all three on
+  a 503 the API marks as temporary (the trigger leaves a 429 to its next poll, as before).
+- **Get Expired reads 10,000 ids per request** instead of 1,000, so a long window takes a tenth of the
+  requests.
+- Location → Geocode now says that each successful lookup is billed.
+
+### Fixed
+
+- **Search with Return All stops at 100,000 jobs.** The API pages no deeper than that and answers any later
+  page with its last page again, so a query matching more kept fetching, and paying for, the same 100 jobs
+  until it ran out of pages. The walk now stops at that depth, or as soon as the API answers an earlier page
+  than the one asked for, and writes a warning to the n8n log with the total that matched. Use Get Many
+  (Feed) to read every match.
+- **Search with a Limit above 100 no longer returns jobs twice.** A Limit of 150 asked for page 2 in pages
+  of 50, which is jobs 51 to 100 again. Each page now starts where the previous one ended, and asks for no
+  more jobs than the Limit still needs.
+- **Get Many (Feed) refuses a location with a city or region but no country** before sending it, with a
+  message naming the location. The API answered 400. Field help now says Country is required.
+- **An empty Job ID or Company ID** (often an expression that resolved to nothing) fails that item with a
+  clear message, and honours Continue On Fail. Before, a blank Job ID requested `/api/jobs/`, which is a
+  billed search.
+
 ## 0.4.1
 
 ### Fixed

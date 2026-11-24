@@ -15,6 +15,19 @@ import { COMPANY_ID_SEPARATOR, resourceLocatorValue } from "./methods";
 
 type Raw = Record<string, unknown>;
 
+/**
+ * A parameter value the API would refuse, caught before the request. The
+ * nodes turn it into a `NodeOperationError` for the item, since the fix is in
+ * the node's settings rather than in the API call.
+ */
+export class ParameterError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ParameterError";
+    Object.setPrototypeOf(this, ParameterError.prototype);
+  }
+}
+
 /** Zero is the n8n default for an unset number field, so it must not be sent. */
 function positive(value: unknown): number | undefined {
   return typeof value === "number" && value > 0 ? value : undefined;
@@ -134,8 +147,11 @@ function pair(include: string[] | undefined, exclude: string[] | undefined): Inc
 
 /**
  * The Locations collection: `{ location: [{country, region, city}], place:
- * [{place: rlc}] }`. Blank parts are dropped (the feed treats a missing part
- * as a wildcard); all-blank rows are discarded.
+ * [{place: rlc}] }`. Blank parts are dropped (a missing region or city
+ * matches the whole country); all-blank rows are discarded.
+ *
+ * A city or region without a country is refused here: the feed answers 400
+ * for it, because "Springfield" alone names places in several countries.
  */
 export function feedLocations(value: unknown): JobFeedParams["locations"] {
   const collection = value as { location?: Array<Record<string, unknown>>; place?: Array<Record<string, unknown>> } | undefined;
@@ -152,7 +168,7 @@ export function feedLocations(value: unknown): JobFeedParams["locations"] {
     }
     if (!parsed || typeof parsed !== "object") {
       // Dropping it would silently widen the feed to every location.
-      throw new Error(
+      throw new ParameterError(
         `Location place "${raw}" is not a picked place. Pick it from the list, or use a Location row with country, region and city.`,
       );
     }
@@ -163,6 +179,15 @@ export function feedLocations(value: unknown): JobFeedParams["locations"] {
   const locations = rows
     .map((row) => ({ country: part(row.country), region: part(row.region), city: part(row.city) }))
     .filter((location) => location.country || location.region || location.city)
+    .map((location) => {
+      if (!location.country) {
+        const named = [location.city, location.region].filter(Boolean).join(", ");
+        throw new ParameterError(
+          `Feed location "${named}" has no country. Set Country on every location that has a Region or City; leave Region and City empty to match a whole country.`,
+        );
+      }
+      return location;
+    })
     .map((location) => ({
       ...(location.country ? { country: location.country } : {}),
       ...(location.region ? { region: location.region } : {}),

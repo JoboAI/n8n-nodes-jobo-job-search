@@ -50,8 +50,8 @@ const SAMPLE_PAGE_SIZE = 25;
  * n8n injects its own Poll Times property into every polling node with a
  * hard-coded "Every Minute" default, and a node cannot narrow that list or
  * change that default — so a trigger nobody configured fires 1,440 times a day.
- * Search is metered per job returned, so this costs nothing extra, but the
- * requests are real. This field is where the interval is genuinely settled; a
+ * Search is metered per job returned and a quiet poll returns none, so this
+ * costs nothing extra, but the requests are real. This field is where the interval is genuinely settled; a
  * tick arriving early is skipped without making a request.
  *
  * The lowest option matches `MIN_POLL_INTERVAL_SECONDS`; connector-core clamps
@@ -98,7 +98,7 @@ export class JoboTrigger implements INodeType {
         // The filter names here are exactly connector-core's
         // NARROWING_FILTER_KEYS — keep the two in sync.
         displayName:
-          "At least one narrowing filter is required: Query, Location, Companies, Occupations, Sources, Skills, Industries, Job Categories or Job Subcategories. Jobs use your plan's included jobs first, then the pay-as-you-go rate ($3.00 per 1,000 jobs), with no per-job charge on Unlimited; cost depends on matches, not poll frequency. Jobo checks at most once per Minimum Interval below, so setting Poll Times faster than that changes nothing.",
+          "At least one narrowing filter is required: Query, Location, Companies, Occupations, Sources, Skills, Industries, Job Categories or Job Subcategories. Each job a poll returns is billed: your plan's included jobs first, then the pay-as-you-go rate, with no per-job charge on Unlimited. A poll that finds nothing new costs nothing once the newest matching job is more than five minutes old. Right after new jobs arrive, the next poll reads again, and bills, the matching jobs indexed in the minute up to the newest one, without emitting them twice. Jobo checks at most once per Minimum Interval below, so setting Poll Times faster than that changes nothing.",
         name: "costNotice",
         type: "notice",
         default: "",

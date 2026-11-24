@@ -9,7 +9,14 @@ import {
   type INodeTypeDescription,
 } from "n8n-workflow";
 
-import { InsufficientCreditsError, toJobSearchBody, type JobFeedParams } from "@jobo-ai/connector-core";
+import {
+  InsufficientCreditsError,
+  JoboApiError,
+  JoboError,
+  JoboTransportError,
+  toJobSearchBody,
+  type JobFeedParams,
+} from "@jobo-ai/connector-core";
 
 import { joboClient } from "./transport";
 import { listSearch, loadOptions } from "./methods";
@@ -24,7 +31,39 @@ import {
   searchFilterOptions,
   searchOutputOptions,
 } from "./descriptions";
-import { buildFeedParams, buildSearchFilters, includeFields } from "./params";
+import { ParameterError, buildFeedParams, buildSearchFilters, includeFields } from "./params";
+
+/**
+ * How deep Search pages: the API serves rows up to an offset of 100,000 and
+ * answers any later page with the last page it allows, again. Without this
+ * bound a Return All over a broad query fetched, and paid for, that same page
+ * until `total_pages` ran out.
+ */
+export const SEARCH_MAX_DEPTH = 100_000;
+const SEARCH_MAX_PAGE_SIZE = 100;
+
+/** Ids per Get Expired page: the most the endpoint takes. */
+const EXPIRED_BATCH_SIZE = 10_000;
+
+/**
+ * The next Search page to request, or null when there is nothing left to ask
+ * for: `wanted` more jobs are needed and `offset` rows have been paged past.
+ *
+ * Search pages by number, so a page starts at `(page - 1) * page_size`, and
+ * the page size must divide the offset or the page lands on rows already
+ * returned (a Limit of 150 used to ask for page 2 of 50, which is rows 50-99
+ * again). So it is the largest size up to 100 that divides the offset and
+ * fits what is still wanted: a Limit of 130 reads 100, then 25, then 5,
+ * rather than a whole page of 100 billed for 30 kept. Never reaches past
+ * `SEARCH_MAX_DEPTH`.
+ */
+export function nextSearchPage(offset: number, wanted: number): { page: number; pageSize: number } | null {
+  const remaining = Math.min(wanted, SEARCH_MAX_DEPTH - offset);
+  if (!(remaining >= 1)) return null;
+  let pageSize = Math.min(SEARCH_MAX_PAGE_SIZE, Math.floor(remaining));
+  while (offset % pageSize !== 0) pageSize--;
+  return { page: offset / pageSize + 1, pageSize };
+}
 
 const SEARCH = { resource: ["job"], operation: ["search"] };
 const FEED = { resource: ["job"], operation: ["feed"] };
@@ -166,8 +205,10 @@ export class Jobo implements INodeType {
         name: "returnAll",
         type: "boolean",
         default: false,
+        // The description is fixed wording under n8n's lint, so the depth
+        // limit goes in the hint.
         description: "Whether to return all results or only up to a given limit",
-        hint: "Billed per job returned beyond any included jobs — narrow filters to control usage.",
+        hint: "Billed per job returned beyond any included jobs — narrow filters to control usage. Search reaches at most the first 100,000 matches; Get Many (Feed) has no such limit.",
         displayOptions: { show: SEARCH_OR_FEED },
       },
       {
@@ -177,6 +218,7 @@ export class Jobo implements INodeType {
         typeOptions: { minValue: 1 },
         default: 50,
         description: "Max number of results to return",
+        hint: "Search reaches at most the first 100,000 matches.",
         displayOptions: {
           show: { resource: ["job"], operation: ["search", "feed"], returnAll: [false] },
         },
@@ -291,7 +333,13 @@ export class Jobo implements INodeType {
         noDataExpression: true,
         displayOptions: { show: { resource: ["location"] } },
         options: [
-          { name: "Geocode", value: "geocode", description: "Resolve a location string", action: "Geocode a location" },
+          {
+            name: "Geocode",
+            value: "geocode",
+            description:
+              "Resolve a location string to a city, region and country. Each successful lookup is billed.",
+            action: "Geocode a location",
+          },
         ],
         default: "geocode",
       },
@@ -335,25 +383,45 @@ export class Jobo implements INodeType {
 
           // POST /api/jobs/search rather than GET /api/jobs: only the body
           // form takes companies and the exclude half of each filter.
-          let page = 1;
+          //
+          // `offset` counts the rows the walk has paged past, `collected` the
+          // jobs emitted; they differ only if a page comes back short.
+          let offset = 0;
           let collected = 0;
+          let total = 0;
+          let clamped = false;
           for (;;) {
-            const pageSize = Math.min(100, returnAll ? 100 : limit - collected);
+            const next = nextSearchPage(offset, limit - collected);
+            if (!next) break;
             const { data } = await client.searchJobsAdvanced(
               toJobSearchBody(filters, {
-                page,
-                page_size: pageSize,
+                page: next.page,
+                page_size: next.pageSize,
                 include_facets: [],
                 ...(fields ? { include_fields: fields } : {}),
               }),
             );
-            if (page === 1) logWarnings(this, data.warnings);
+            if (offset === 0) logWarnings(this, data.warnings);
+            total = data.total;
+            // Past its depth limit the API serves the last page it allows
+            // again, numbered as that page. Those jobs were already emitted
+            // (and billed once more by this request), so stop here.
+            if (typeof data.page === "number" && data.page < next.page) {
+              clamped = true;
+              break;
+            }
             for (const job of data.jobs) {
               out.push({ json: job as unknown as IDataObject, pairedItem: { item: i } });
               collected++;
             }
-            if (page >= data.total_pages || data.jobs.length === 0 || collected >= limit) break;
-            page++;
+            offset += next.pageSize;
+            if (next.page >= data.total_pages || data.jobs.length === 0 || collected >= limit) break;
+          }
+          if ((clamped || offset >= SEARCH_MAX_DEPTH) && collected < limit && total > offset) {
+            this.logger.warn(
+              `Jobo: Search stopped after the first ${offset.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} matching jobs, the deepest the API pages. ` +
+                "Narrow the filters, or use Job → Get Many (Feed), which has no such limit, to read every match.",
+            );
           }
         } else if (resource === "job" && operation === "get") {
           const { data } = await client.getJob(this.getNodeParameter("jobId", i) as string);
@@ -388,16 +456,19 @@ export class Jobo implements INodeType {
           }
         } else if (resource === "job" && operation === "expired") {
           // Always reads every page. The endpoint covers closures across the
-          // whole index, so a busy day overflows the first 1,000 ids, and a
+          // whole index, so a busy day overflows the first page of ids, and a
           // truncated list leaves closed jobs live downstream. It is free, so
           // there is no bill to cap — and no Return All toggle, whose required
           // default of off would cut existing workflows to a 50-item Limit.
           const expiredSince = this.getNodeParameter("expiredSince", i, "") as string;
           let cursor: string | undefined;
           for (;;) {
+            // The largest page the endpoint allows: it is free of credits but
+            // each request counts toward the feed's request limit.
             const { data } = await client.getExpiredJobIds({
               ...(expiredSince ? { expired_since: expiredSince } : {}),
               ...(cursor ? { cursor } : {}),
+              batch_size: EXPIRED_BATCH_SIZE,
             });
             for (const id of data.job_ids) {
               out.push({ json: { id }, pairedItem: { item: i } });
@@ -448,6 +519,21 @@ function logWarnings(ctx: IExecuteFunctions, warnings: Array<{ code: string; mes
  */
 export function toNodeError(ctx: IExecuteFunctions | { getNode: () => never }, error: unknown, itemIndex?: number) {
   const node = (ctx as IExecuteFunctions).getNode();
+
+  // Refused before any request: a parameter the node can tell is wrong (a
+  // feed location with no country) or one connector-core will not send (an
+  // empty job or company id). The fix is in this item's parameters, so it is
+  // an operation error, not an API one.
+  if (
+    error instanceof ParameterError ||
+    (error instanceof JoboError && !(error instanceof JoboApiError) && !(error instanceof JoboTransportError))
+  ) {
+    return new NodeOperationError(node, error.message, {
+      itemIndex,
+      description:
+        "Nothing was sent to Jobo. Check this item's parameters: an expression may have resolved to an empty value.",
+    });
+  }
 
   if (error instanceof InsufficientCreditsError) {
     return new NodeApiError(node, { message: error.message } as never, {
