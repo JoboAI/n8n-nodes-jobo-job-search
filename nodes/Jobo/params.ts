@@ -1,5 +1,8 @@
 import {
+  HIRING_SIGNAL_FILTERS,
+  SIGNAL_MAX_LIST_VALUES,
   toList,
+  type HiringSignalFilters,
   type IncludeExclude,
   type JobFeedParams,
   type JobSearchFilters,
@@ -248,4 +251,111 @@ export function buildFeedParams(values: FeedParameterValues): JobFeedParams {
     if (params[key] === undefined) delete params[key];
   }
   return params;
+}
+
+// ── Hiring Signals ───────────────────────────────────────────────────────────
+
+/** Every signal filter key except `created_after`, which the signal trigger's poller owns. */
+export const TRIGGER_SIGNAL_FILTER_KEYS: readonly string[] = HIRING_SIGNAL_FILTERS.map((filter) => filter.key).filter(
+  (key) => key !== "created_after",
+);
+
+/**
+ * Signal filters, keyed by `HIRING_SIGNAL_FILTERS` keys, from the node's
+ * filter collections (one object per collection; their option names are the
+ * keys). `keys` keeps only some: `COMPANY_SIGNAL_FILTER_KEYS` for one
+ * company's signals, `TRIGGER_SIGNAL_FILTER_KEYS` for the trigger.
+ *
+ * Everything the API would refuse is refused here, before a request, as a
+ * `ParameterError`: a list value with a comma (the API reads a comma as two
+ * values), more values than a list takes, a number out of range, a date that
+ * is not one. connector-core's `toSignalsQuery` makes the comma check too,
+ * but throws a plain Error from inside the client call, which the node could
+ * not tell from a failed request; it stays as the backstop.
+ */
+export function buildSignalFilters(collections: Raw[], keys?: readonly string[]): HiringSignalFilters {
+  const merged: Raw = Object.assign({}, ...collections);
+  const filters: Record<string, unknown> = {};
+
+  for (const filter of HIRING_SIGNAL_FILTERS) {
+    if (keys && !keys.includes(filter.key)) continue;
+    const value = merged[filter.key];
+    if (value == null) continue;
+
+    switch (filter.kind) {
+      case "stringList":
+      case "enumList": {
+        // A single string (an AI agent's or an expression's) is split on
+        // commas; a list keeps each entry whole, so a comma inside one is
+        // caught below rather than silently making two filters.
+        const list = toList(value);
+        if (!list) break;
+        const withComma = list.find((entry) => entry.includes(","));
+        if (withComma !== undefined) {
+          throw new ParameterError(
+            `"${withComma}" cannot be used in ${filter.label}: the signals API separates values with commas, so a value that contains one is read as two.`,
+          );
+        }
+        if (list.length > SIGNAL_MAX_LIST_VALUES) {
+          throw new ParameterError(
+            `${filter.label} has ${list.length} values; the signals API takes at most ${SIGNAL_MAX_LIST_VALUES}.`,
+          );
+        }
+        filters[filter.key] = list;
+        break;
+      }
+      case "number": {
+        const number = typeof value === "number" ? value : Number(value);
+        // 0 is the field's unset state.
+        if (!Number.isFinite(number) || number <= 0) break;
+        const min = filter.min ?? 1;
+        const max = filter.max ?? Number.POSITIVE_INFINITY;
+        if (number < min || number > max) {
+          throw new ParameterError(`${filter.label} must be from ${min} to ${max}, or 0 for no filter; got ${number}.`);
+        }
+        filters[filter.key] = Math.trunc(number);
+        break;
+      }
+      case "boolean":
+        if (value === true || value === "true") filters[filter.key] = true;
+        break;
+      case "date": {
+        // The API takes a day, yyyy-MM-dd, and n8n's date picker gives a
+        // date and time: the day the user picked is the part before the "T".
+        const text = String(value).trim();
+        if (text === "") break;
+        const day = /^\d{4}-\d{2}-\d{2}/.exec(text)?.[0];
+        if (!day) throw new ParameterError(`${filter.label} must be a date as yyyy-MM-dd; got "${text}".`);
+        filters[filter.key] = day;
+        break;
+      }
+      case "dateTime": {
+        // Passed unchanged: a created_at copied from a signal carries seven
+        // decimal places, and created_after compares every one of them.
+        const text = String(value).trim();
+        if (text !== "") filters[filter.key] = text;
+        break;
+      }
+    }
+  }
+
+  return filters as HiringSignalFilters;
+}
+
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The company of Get Many for Company. Refused before a request when empty
+ * (often an expression that resolved to nothing) or not a GUID: the API's
+ * route only matches a GUID, and answers anything else with a bare 404.
+ */
+export function signalCompanyId(value: unknown): string {
+  const id = typeof value === "string" ? value.trim() : "";
+  if (id === "") throw new ParameterError("A company id is required: Company ID is empty.");
+  if (!GUID.test(id)) {
+    throw new ParameterError(
+      `Company ID "${id}" is not a Jobo company ID. Use the GUID in a signal's company.id or a job's company.id; to filter by website, use Get Many with Company Domains.`,
+    );
+  }
+  return id;
 }

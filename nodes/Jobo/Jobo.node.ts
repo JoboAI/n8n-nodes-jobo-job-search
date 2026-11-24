@@ -10,17 +10,21 @@ import {
 } from "n8n-workflow";
 
 import {
+  COMPANY_SIGNAL_FILTER_KEYS,
   InsufficientCreditsError,
   JoboApiError,
   JoboError,
   JoboTransportError,
+  SIGNAL_MAX_LIMIT,
   toJobSearchBody,
+  type HiringSignalListResponse,
   type JobFeedParams,
 } from "@jobo-ai/connector-core";
 
 import { joboClient } from "./transport";
 import { listSearch, loadOptions } from "./methods";
 import {
+  SIGNAL_COLLECTIONS,
   V2_AND_LATER,
   companyFilter,
   feedExcludeOptions,
@@ -30,8 +34,17 @@ import {
   searchExcludeOptions,
   searchFilterOptions,
   searchOutputOptions,
+  signalFilterCollections,
 } from "./descriptions";
-import { ParameterError, buildFeedParams, buildSearchFilters, includeFields } from "./params";
+import {
+  ParameterError,
+  buildFeedParams,
+  buildSearchFilters,
+  buildSignalFilters,
+  includeFields,
+  signalCompanyId,
+} from "./params";
+import { SIGNAL_RETURN_ALL_MAX, signalApiError, signalItem } from "./signals";
 
 /**
  * How deep Search pages: the API serves rows up to an offset of 100,000 and
@@ -68,6 +81,9 @@ export function nextSearchPage(offset: number, wanted: number): { page: number; 
 const SEARCH = { resource: ["job"], operation: ["search"] };
 const FEED = { resource: ["job"], operation: ["feed"] };
 const SEARCH_OR_FEED = { resource: ["job"], operation: ["search", "feed"] };
+const SIGNALS = { resource: ["hiringSignal"], operation: ["getAll"] };
+const COMPANY_SIGNALS = { resource: ["hiringSignal"], operation: ["getAllForCompany"] };
+const ANY_SIGNALS = { resource: ["hiringSignal"], operation: ["getAll", "getAllForCompany"] };
 
 export class Jobo implements INodeType {
   description: INodeTypeDescription = {
@@ -85,7 +101,7 @@ export class Jobo implements INodeType {
     version: [1, 2],
     defaultVersion: 2,
     subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
-    description: "Search and sync live job listings from 200+ ATS platforms",
+    description: "Search and sync live job listings from 200+ ATS platforms, and read companies' hiring signals",
     defaults: { name: "Jobo" },
     // Every operation is a plain request/response over the Jobo API, so the
     // node is safe to expose to an AI agent as a tool.
@@ -107,6 +123,7 @@ export class Jobo implements INodeType {
         options: [
           { name: "Job", value: "job" },
           { name: "Company", value: "company" },
+          { name: "Hiring Signal", value: "hiringSignal" },
           { name: "Location", value: "location" },
         ],
         default: "job",
@@ -325,6 +342,86 @@ export class Jobo implements INodeType {
         displayOptions: { show: { resource: ["company"] } },
       },
 
+      // ── Hiring Signal ──────────────────────────────────────────────────
+      {
+        displayName: "Operation",
+        name: "operation",
+        type: "options",
+        noDataExpression: true,
+        displayOptions: { show: { resource: ["hiringSignal"] } },
+        options: [
+          {
+            name: "Get Many",
+            value: "getAll",
+            description:
+              "Hiring signals: events at companies detected from their job postings, such as a hiring surge, a first job in a new country, a leadership search, a new technology or a slowdown. Newest detection day first. Filter by company, signal type, function, role, technology, job location, strength and date. Each signal returned is billed at ten times the price of a job: included plan signals first, then the wallet; no per-signal charge on Unlimited.",
+            action: "Get many hiring signals",
+          },
+          {
+            name: "Get Many for Company",
+            value: "getAllForCompany",
+            description:
+              "Hiring signals at one company, by its Jobo company ID (a GUID: the ID of a signal's or a job's company). Newest detection day first. Billed like Get Many: each signal returned costs ten times a job.",
+            action: "Get many hiring signals for a company",
+          },
+        ],
+        default: "getAll",
+      },
+      {
+        displayName: "Company ID",
+        name: "companyId",
+        type: "string",
+        required: true,
+        default: "",
+        placeholder: "e.g. 0d5f8b4e-1111-4c2a-9a55-2f6d1f0e7a10",
+        description: "The company's Jobo ID (a GUID), as found on each signal's or job's company",
+        displayOptions: { show: COMPANY_SIGNALS },
+      },
+      {
+        displayName: "Return All",
+        name: "returnAll",
+        type: "boolean",
+        default: false,
+        description: "Whether to return all results or only up to a given limit",
+        // The description is fixed wording under n8n's lint, so the bill and
+        // the ceiling go in the hint.
+        hint: `Every signal returned is billed, at ten times the price of a job, and a signal read again is billed again. Return All stops at ${SIGNAL_RETURN_ALL_MAX.toLocaleString("en-US")} signals.`,
+        displayOptions: { show: ANY_SIGNALS },
+      },
+      {
+        displayName: "Limit",
+        name: "limit",
+        type: "number",
+        typeOptions: { minValue: 1 },
+        default: 50,
+        description: "Max number of results to return",
+        hint: "Every signal returned is billed, at ten times the price of a job.",
+        displayOptions: { show: { ...ANY_SIGNALS, returnAll: [false] } },
+      },
+      {
+        displayName: "Sort",
+        name: "signalSort",
+        type: "options",
+        options: [
+          {
+            name: "Detected (Newest Day First)",
+            value: "detected_desc",
+            description: "The most recent detection day first",
+          },
+          {
+            name: "Stored (Oldest First)",
+            value: "created_asc",
+            description:
+              "The order Jobo stored the signals in. With Created After set to the Created At of the last signal you read, the next run continues exactly where that one stopped.",
+          },
+        ],
+        default: "detected_desc",
+        description: "The order the signals come back in",
+        displayOptions: { show: ANY_SIGNALS },
+      },
+      ...signalFilterCollections(SIGNALS),
+      ...signalFilterCollections(COMPANY_SIGNALS, COMPANY_SIGNAL_FILTER_KEYS),
+
       // ── Location ───────────────────────────────────────────────────────
       {
         displayName: "Operation",
@@ -362,8 +459,10 @@ export class Jobo implements INodeType {
     const client = await joboClient(this);
 
     for (let i = 0; i < items.length; i++) {
+      // Outside the try, so the catch can word a signals failure as one.
+      let resource = "";
       try {
-        const resource = this.getNodeParameter("resource", i) as string;
+        resource = this.getNodeParameter("resource", i) as string;
         const operation = this.getNodeParameter("operation", i) as string;
 
         if (resource === "job" && operation === "search") {
@@ -482,6 +581,51 @@ export class Jobo implements INodeType {
         } else if (resource === "location") {
           const { data } = await client.geocode(this.getNodeParameter("locationQuery", i) as string);
           out.push({ json: data as IDataObject, pairedItem: { item: i } });
+        } else if (resource === "hiringSignal" && (operation === "getAll" || operation === "getAllForCompany")) {
+          const forCompany = operation === "getAllForCompany";
+          const returnAll = this.getNodeParameter("returnAll", i) as boolean;
+          const limit = returnAll
+            ? SIGNAL_RETURN_ALL_MAX
+            : Math.max(1, Math.floor(Number(this.getNodeParameter("limit", i)) || 1));
+          // Both checked before any request: the fix is in this item's parameters.
+          const companyId = forCompany ? signalCompanyId(this.getNodeParameter("companyId", i, "")) : undefined;
+          const filters = buildSignalFilters(
+            SIGNAL_COLLECTIONS.map((c) => this.getNodeParameter(c.name, i, {}) as Record<string, unknown>),
+            forCompany ? COMPANY_SIGNAL_FILTER_KEYS : undefined,
+          );
+
+          // A cursor continues the order it was issued under, so every page
+          // of one read carries the same sort.
+          const sort = this.getNodeParameter("signalSort", i, "detected_desc") as "detected_desc" | "created_asc";
+
+          // Every signal returned is billed, so each page asks for no more
+          // than is still wanted, up to the API's 200.
+          let cursor: string | undefined;
+          let collected = 0;
+          let more = false;
+          for (;;) {
+            const paging = {
+              limit: Math.min(SIGNAL_MAX_LIMIT, limit - collected),
+              sort,
+              ...(cursor ? { cursor } : {}),
+            };
+            const { data }: { data: HiringSignalListResponse } = companyId
+              ? await client.listCompanySignals(companyId, filters, paging)
+              : await client.listSignals(filters, paging);
+            for (const signal of data.signals ?? []) {
+              out.push({ json: signalItem(signal), pairedItem: { item: i } });
+              collected++;
+            }
+            more = data.has_more === true && !!data.next_cursor;
+            if (!more || collected >= limit) break;
+            cursor = data.next_cursor as string;
+          }
+          if (returnAll && more) {
+            this.logger.warn(
+              `Jobo: Hiring Signals stopped at ${SIGNAL_RETURN_ALL_MAX.toLocaleString("en-US")} signals, the most Return All reads; more matched. ` +
+                "Each signal is billed, so narrow the filters (a later Detected On or After, a Minimum Strength, fewer types), or turn off Return All and set Limit to read more on purpose.",
+            );
+          }
         } else {
           throw new NodeOperationError(this.getNode(), `Unsupported operation "${resource}.${operation}"`, {
             itemIndex: i,
@@ -492,7 +636,7 @@ export class Jobo implements INodeType {
           out.push({ json: { error: (error as Error).message }, pairedItem: { item: i } });
           continue;
         }
-        throw toNodeError(this, error, i);
+        throw toNodeError(this, error, i, resource);
       }
     }
 
@@ -517,7 +661,12 @@ function logWarnings(ctx: IExecuteFunctions, warnings: Array<{ code: string; mes
  * UI shows "402" rather than a bare message. Credit exhaustion gets its own
  * wording because "request failed" sends people looking in the wrong place.
  */
-export function toNodeError(ctx: IExecuteFunctions | { getNode: () => never }, error: unknown, itemIndex?: number) {
+export function toNodeError(
+  ctx: IExecuteFunctions | { getNode: () => never },
+  error: unknown,
+  itemIndex?: number,
+  resource?: string,
+) {
   const node = (ctx as IExecuteFunctions).getNode();
 
   // Refused before any request: a parameter the node can tell is wrong (a
@@ -533,6 +682,13 @@ export function toNodeError(ctx: IExecuteFunctions | { getNode: () => never }, e
       description:
         "Nothing was sent to Jobo. Check this item's parameters: an expression may have resolved to an empty value.",
     });
+  }
+
+  // Signals have their own included allowance, need an account key, and are
+  // closed to sandbox keys: each of those failures says so in its own words.
+  if (resource === "hiringSignal") {
+    const signalError = signalApiError(node, error, itemIndex);
+    if (signalError) return signalError;
   }
 
   if (error instanceof InsufficientCreditsError) {

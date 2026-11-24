@@ -1,0 +1,19 @@
+{
+  "node": "n8n-nodes-jobo-job-search.joboHiringSignalTrigger",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Data & Storage", "Sales"],
+  "alias": ["Hiring Signals", "Buying Signals", "Intent Data", "Sales Triggers", "Company Hiring", "Lead Generation", "Hiring Surge", "Hiring"],
+  "resources": {
+    "credentialDocumentation": [
+      {
+        "url": "https://jobo.world/docs/connectors/n8n"
+      }
+    ],
+    "primaryDocumentation": [
+      {
+        "url": "https://jobo.world/docs/connectors/n8n"
+      }
+    ]
+  }
+}

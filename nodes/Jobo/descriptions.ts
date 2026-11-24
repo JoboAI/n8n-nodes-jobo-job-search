@@ -5,9 +5,14 @@ import {
   COMPANY_SIZES,
   EMPLOYMENT_TYPES,
   EXPERIENCE_LEVELS,
+  HIRING_SIGNAL_FILTERS,
   INCLUDE_FIELDS,
   LANGUAGES,
+  SIGNAL_MAX_LIST_VALUES,
   WORK_MODELS,
+  signalTypeLabel,
+  type HiringSignalFilters,
+  type SignalFilterDescriptor,
 } from "@jobo-ai/connector-core";
 
 /**
@@ -584,3 +589,216 @@ export function feedExcludeOptions(): INodeProperties[] {
 export function feedOutputOptions(): INodeProperties[] {
   return [descriptionFormat];
 }
+
+// ── Polling (both triggers) ──────────────────────────────────────────────────
+
+/**
+ * The floor a trigger actually honours, as offered in the UI.
+ *
+ * n8n injects its own Poll Times property into every polling node with a
+ * hard-coded "Every Minute" default, and a node cannot narrow that list or
+ * change that default — so a trigger nobody configured fires 1,440 times a day.
+ * Jobs and signals are metered per item returned and a quiet poll returns
+ * none, so this costs nothing extra, but the requests are real. This field is
+ * where the interval is genuinely settled; a tick arriving early is skipped
+ * without making a request.
+ *
+ * The lowest option matches `MIN_POLL_INTERVAL_SECONDS`; connector-core clamps
+ * anything below it regardless.
+ */
+export const MIN_INTERVAL_OPTIONS = [
+  { name: "Every 15 Minutes", value: 15 },
+  { name: "Every 30 Minutes", value: 30 },
+  { name: "Every Hour", value: 60 },
+  { name: "Every 6 Hours", value: 360 },
+  { name: "Every 24 Hours", value: 1440 },
+] as const;
+
+export const DEFAULT_MIN_INTERVAL_MINUTES = 60;
+
+// ── Hiring Signals (Jobo › Hiring Signal, and the signal trigger) ────────────
+
+/**
+ * Which collection each signal filter sits in: which companies, what the
+ * signal is about, and the thresholds and dates.
+ *
+ * A record over every key of connector-core's `HiringSignalFilters`, so a
+ * filter the core adds fails the typecheck here until it is given a place;
+ * `scripts/verify-filters.mjs` then checks the built nodes against
+ * contracts/signals.json.
+ */
+export const SIGNAL_FILTER_GROUPS: Record<keyof HiringSignalFilters, SignalFilterGroup> = {
+  domains: "company",
+  company_ids: "company",
+  exclude_domains: "company",
+  countries: "company",
+  company_sizes: "company",
+  industries: "company",
+  categories: "company",
+  funding_stages: "company",
+  founded_after: "company",
+  exclude_agencies: "company",
+  types: "focus",
+  functions: "focus",
+  roles: "focus",
+  seniority: "focus",
+  technologies: "focus",
+  skills: "focus",
+  technology_categories: "focus",
+  job_countries: "focus",
+  job_regions: "focus",
+  job_cities: "focus",
+  min_strength: "threshold",
+  min_new_jobs: "threshold",
+  min_days_open: "threshold",
+  reposted_only: "threshold",
+  detected_after: "threshold",
+  detected_before: "threshold",
+  created_after: "threshold",
+};
+
+export type SignalFilterGroup = "company" | "focus" | "threshold";
+
+/** The three signal filter collections. Their `name`s are what the nodes read. */
+export const SIGNAL_COLLECTIONS: ReadonlyArray<{
+  // Not `group`: n8n's lint reads an object with `group` and `displayName`
+  // as a node description and demands a file of its own for it.
+  filterGroup: SignalFilterGroup;
+  name: string;
+  displayName: string;
+  placeholder: string;
+  description: string;
+}> = [
+  {
+    filterGroup: "company",
+    name: "signalCompanyFilters",
+    displayName: "Company Filters",
+    placeholder: "Add Company Filter",
+    description: "Which companies the signals are about: by domain, ID, headquarters country, size, industry or funding",
+  },
+  {
+    filterGroup: "focus",
+    name: "signalFocusFilters",
+    displayName: "Signal Filters",
+    placeholder: "Add Signal Filter",
+    description:
+      "What the signals are about: the kind of signal, and the function, role, seniority, technology or job location behind it",
+  },
+  {
+    filterGroup: "threshold",
+    name: "signalThresholds",
+    displayName: "Thresholds and Dates",
+    placeholder: "Add Threshold or Date",
+    description: "How strong or large a signal must be, and when it was detected",
+  },
+];
+
+/** Readable names for the enum values whose words do not title-case well. */
+const SIGNAL_VALUE_NAMES: Readonly<Record<string, string>> = { vp: "VP", c_level: "C-Level" };
+
+function signalOptionName(filter: SignalFilterDescriptor, value: string): string {
+  if (filter.key === "types") return signalTypeLabel(value);
+  if (filter.key === "company_sizes") return `${value} employees`;
+  const known = SIGNAL_VALUE_NAMES[value];
+  if (known) return known;
+  return value.replace(/_/g, " ").replace(/(^|\s)([a-z])/g, (m) => m.toUpperCase());
+}
+
+/**
+ * One signal filter as an n8n field. The option `name` is the query
+ * parameter, and the description says what the API accepts, for the person
+ * in the editor and for an AI agent that sees only this text.
+ */
+function signalField(filter: SignalFilterDescriptor): INodeProperties {
+  const base = { displayName: filter.label, name: filter.key };
+  switch (filter.kind) {
+    case "enumList": {
+      const values = filter.options ?? [];
+      const options = values.map((value) => ({ name: signalOptionName(filter, value), value }));
+      // Types read best alphabetically; sizes and seniority keep their order, lowest first.
+      if (filter.key === "types") options.sort((a, b) => a.name.localeCompare(b.name));
+      return {
+        ...base,
+        type: "multiOptions",
+        options,
+        default: [],
+        description: `${filter.description} One or more of: ${values.join(", ")}.`,
+      };
+    }
+    case "stringList":
+      return {
+        ...base,
+        type: "string",
+        typeOptions: {
+          multipleValues: true,
+          multipleValueButtonText: `Add ${filter.label.replace(/ies$/, "y").replace(/s$/, "")}`,
+        },
+        default: [],
+        description: /comma/.test(filter.description)
+          ? `${filter.description} At most ${SIGNAL_MAX_LIST_VALUES} values.`
+          : `${filter.description} A value cannot contain a comma.`,
+      };
+    case "number":
+      return {
+        ...base,
+        type: "number",
+        typeOptions: { minValue: 0, ...(filter.max !== undefined ? { maxValue: filter.max } : {}) },
+        default: 0,
+        description: `${filter.description} From ${filter.min ?? 1} to ${filter.max ?? "any"}; 0 means no filter.`,
+      };
+    case "boolean":
+      return {
+        ...base,
+        type: "boolean",
+        default: false,
+        // n8n's lint wants a boolean's description to start with "Whether".
+        description: filter.description.startsWith("Only ")
+          ? `Whether to return only ${filter.description.slice("Only ".length)}`
+          : `Whether to ${filter.description.charAt(0).toLowerCase()}${filter.description.slice(1)}`,
+      };
+    case "date":
+      return {
+        ...base,
+        type: "dateTime",
+        default: "",
+        description: `${filter.description} Only the day of the chosen date is sent.`,
+      };
+    case "dateTime":
+      return { ...base, type: "dateTime", default: "", description: filter.description };
+  }
+}
+
+/**
+ * The signal filter collections for one operation or trigger, built from
+ * connector-core's `HIRING_SIGNAL_FILTERS` so a filter cannot exist in the
+ * core and go missing here. `keys` keeps only some filters: the per-company
+ * endpoint takes a few, and the trigger leaves `created_after` to the poller.
+ * A collection left with nothing is not shown.
+ */
+export function signalFilterCollections(show: Show, keys?: readonly string[]): INodeProperties[] {
+  const out: INodeProperties[] = [];
+  for (const collection of SIGNAL_COLLECTIONS) {
+    const options = HIRING_SIGNAL_FILTERS.filter(
+      (filter) => SIGNAL_FILTER_GROUPS[filter.key] === collection.filterGroup && (!keys || keys.includes(filter.key)),
+    )
+      .map(signalField)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    if (options.length === 0) continue;
+    out.push({
+      displayName: collection.displayName,
+      name: collection.name,
+      type: "collection",
+      placeholder: collection.placeholder,
+      default: {},
+      description: collection.description,
+      ...(Object.keys(show).length > 0 ? { displayOptions: { show } } : {}),
+      options,
+    });
+  }
+  return out;
+}
+
+/** Labels of the filters that count as narrowing, for the trigger's notice and errors. */
+export const NARROWING_SIGNAL_FILTER_LABELS: readonly string[] = HIRING_SIGNAL_FILTERS.filter(
+  (filter) => filter.narrowing,
+).map((filter) => filter.label);

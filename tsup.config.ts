@@ -12,6 +12,7 @@ export default defineConfig({
     "credentials/JoboApi.credentials": "credentials/JoboApi.credentials.ts",
     "nodes/Jobo/Jobo.node": "nodes/Jobo/Jobo.node.ts",
     "nodes/Jobo/JoboTrigger.node": "nodes/Jobo/JoboTrigger.node.ts",
+    "nodes/Jobo/JoboHiringSignalTrigger.node": "nodes/Jobo/JoboHiringSignalTrigger.node.ts",
   },
   format: ["cjs"],
   target: "node20",

@@ -7,9 +7,12 @@ Full setup and filter docs: [jobo.world/docs/connectors/n8n](https://jobo.world/
 
 ## Nodes
 
-**Jobo** — Job (Search, Get, Get Many/Feed, Get Expired), Company (Get), Location (Geocode).
+**Jobo** — Job (Search, Get, Get Many/Feed, Get Expired), Company (Get), Hiring Signal (Get Many, Get Many
+for Company), Location (Geocode).
 
 **Jobo Trigger** — polls for newly indexed jobs matching your filters.
+
+**Jobo Hiring Signal Trigger** — polls for new hiring signals matching your filters.
 
 Search and the trigger take every filter of `POST /api/jobs/search`; Get Many takes every filter of
 `POST /api/jobs/feed`:
@@ -32,9 +35,40 @@ Search reaches at most the first 100,000 matches, the deepest the API pages; a R
 writes a warning to the n8n log. Get Many (Feed) has no such limit. Location → Geocode bills each successful
 lookup.
 
+### Hiring Signals
+
+A hiring signal is one event at one company, detected from its job postings: a hiring surge, a first job in a
+new country, a leadership search, a new technology, a slowdown. See the
+[Hiring Signals guide](https://jobo.world/docs/guides/hiring-signals).
+
+- **Hiring Signal → Get Many** (`GET /api/signals`) takes every filter of that endpoint, in three
+  collections: Company Filters, Signal Filters, and Thresholds and Dates. **Get Many for Company**
+  (`GET /api/companies/{id}/signals`) takes a Jobo company ID and the filters that endpoint takes.
+- Both page up to 200 signals per request and ask for no more than **Limit** still wants. **Return All**
+  stops at 1,000 signals, with a warning in the n8n log when more matched.
+- **Sort** is **Detected (Newest Day First)** by default. **Stored (Oldest First)** (`sort=created_asc`)
+  returns signals in the order Jobo stored them: with **Created After** set to the `created_at` of the last
+  signal a run read, the next run continues exactly where that one stopped.
+- Each item is the signal as returned, plus `summary` (one sentence, as Jobo's dashboard words it),
+  `type_label` and `strength_band`.
+- **Jobo Hiring Signal Trigger** polls like the Jobo Trigger: the first run records a starting point,
+  **Minimum Interval** decides how often it calls the API, and at least one narrowing filter is required
+  (signal types, company domains or IDs, countries, sizes, industries, categories, funding stages,
+  functions, roles, seniority, technologies, skills, technology categories, or job countries, regions or
+  cities). **Max Signals per Poll** (default 50, at most 1,000) caps one poll; the rest arrive on the next
+  polls.
+- The trigger reads the stored order (`sort=created_asc`) and asks only for signals stored after the last one
+  it delivered, so each signal is read, and billed, once. Its saved position is that signal's `created_at`
+  as the API sent it, microseconds included, plus the API's cursor while more signals are waiting. It needs
+  an API that has the stored order.
+
+Every signal returned is billed at ten times the price of a job, and a signal read again is billed again:
+your plan's included signals first, then your wallet, with no per-signal charge on Unlimited. A request that
+returns nothing is free. Hiring Signals needs a live key that belongs to an account.
+
 ### Node versions
 
-New nodes are version 2, where Skills is a dropdown. Workflows saved with 0.2.0 or earlier keep version 1:
+New Jobo and Jobo Trigger nodes are version 2, where Skills is a dropdown. Workflows saved with 0.2.0 or earlier keep version 1:
 Skills stays a free-entry list and every saved parameter means what it did. Everything else new appears in
 both versions.
 

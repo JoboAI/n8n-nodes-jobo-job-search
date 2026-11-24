@@ -1,6 +1,58 @@
 # Changelog
 
-## 0.5.0
+## 0.7.0
+
+Requires `@jobo-ai/connector-core` 0.8.0 (inlined at build time), and an API that has the stored order of
+Hiring Signals (`sort=created_asc`).
+
+### Changed
+
+- **Jobo Hiring Signal Trigger reads each signal once.** It reads signals in the order Jobo stored them and
+  asks only for those stored after the last one it delivered, so no signal is read, or billed, twice. In
+  0.6.0 the poll just after new signals arrived read the newest of them again. When more signals are new than
+  **Max Signals per Poll**, the next polls continue from the same position, oldest first.
+- A trigger that last ran on 0.6.0 carries on from its saved starting point. If it had stopped at **Max
+  Signals per Poll** with more to read, the signals it had already delivered from that backlog are delivered
+  once more.
+
+### Added
+
+- **Sort** on Hiring Signal → Get Many and Get Many for Company: **Detected (Newest Day First)**, the
+  default, or **Stored (Oldest First)**. In the stored order, with **Created After** set to the `created_at`
+  of the last signal a run read, the next run continues exactly where that one stopped.
+
+## 0.6.0
+
+Requires `@jobo-ai/connector-core` 0.7.0 (inlined at build time).
+
+### Added
+
+- **Hiring Signals.** A signal is one event at one company, detected from its job postings: a hiring surge, a
+  first job in a new country, a leadership search, a new technology, a slowdown. Each signal is billed at ten
+  times the price of a job, and a signal read again is billed again.
+  - **Jobo → Hiring Signal → Get Many** reads `GET /api/signals`, newest detection day first, with every filter
+    of that endpoint in three collections: **Company Filters** (domains, IDs, headquarters country, size,
+    industry, category, funding stage, founding year, staffing agencies), **Signal Filters** (signal type,
+    function, role, seniority, technology, skill, technology category, job country, region and city) and
+    **Thresholds and Dates** (strength, new jobs, days open, reposted jobs, detection day, created after).
+  - **Jobo → Hiring Signal → Get Many for Company** reads one company's signals by its Jobo company ID, with
+    the filters that endpoint takes: signal type, minimum strength, detection days and created after.
+  - Both page up to 200 signals per request and never ask for more than **Limit** still wants. **Return All**
+    stops at 1,000 signals and writes a warning to the n8n log when more matched.
+  - Each item is the signal as the API returned it plus `summary` (one sentence, as Jobo's dashboard words it,
+    e.g. "17 new jobs this week vs 3.1 a week normally"), `type_label` and `strength_band`. A signal type
+    added after this release still gets a label and a summary.
+- **Jobo Hiring Signal Trigger**, a new node. It starts a workflow for each new signal matching your filters,
+  with the same rules as the Jobo Trigger: the first run records a starting point and reads nothing, it
+  needs at least one narrowing filter, **Minimum Interval** decides how often it calls the API, and a failed
+  poll keeps its place. **Max Signals per Poll** (default 50, at most 1,000) caps what one poll delivers and is
+  billed for; the rest arrive on the next polls. A poll that finds nothing new costs nothing. Just after new
+  signals arrive, one further poll may read the newest of them again, and bill them, without emitting them
+  twice. A test run in the editor returns, and bills, up to 5 matching signals from the last 7 days.
+- Clear errors for Hiring Signals: not enough included signals or wallet balance (402), a key that belongs
+  to no account (403), a sandbox key (404) and the rate limit (429). A list value containing a comma, more
+  than 100 values in one list, a number out of range, or a Company ID that is empty or not a GUID fails that
+  item before any request.
 
 Requires `@jobo-ai/connector-core` 0.6.0 (inlined at build time).
 

@@ -24,7 +24,10 @@ import {
 
 import { joboClient } from "./transport";
 import { listSearch, loadOptions } from "./methods";
+// Minimum Interval: see MIN_INTERVAL_OPTIONS for why the trigger has its own.
 import {
+  DEFAULT_MIN_INTERVAL_MINUTES,
+  MIN_INTERVAL_OPTIONS,
   V2_AND_LATER,
   companyFilter,
   occupationFilter,
@@ -43,29 +46,6 @@ import { buildSearchFilters, includeFields } from "./params";
  */
 const SAMPLE_LOOKBACK_SECONDS = 3600;
 const SAMPLE_PAGE_SIZE = 25;
-
-/**
- * The floor the node actually honours, as offered in the UI.
- *
- * n8n injects its own Poll Times property into every polling node with a
- * hard-coded "Every Minute" default, and a node cannot narrow that list or
- * change that default — so a trigger nobody configured fires 1,440 times a day.
- * Search is metered per job returned and a quiet poll returns none, so this
- * costs nothing extra, but the requests are real. This field is where the interval is genuinely settled; a
- * tick arriving early is skipped without making a request.
- *
- * The lowest option matches `MIN_POLL_INTERVAL_SECONDS`; connector-core clamps
- * anything below it regardless.
- */
-const MIN_INTERVAL_OPTIONS = [
-  { name: "Every 15 Minutes", value: 15 },
-  { name: "Every 30 Minutes", value: 30 },
-  { name: "Every Hour", value: 60 },
-  { name: "Every 6 Hours", value: 360 },
-  { name: "Every 24 Hours", value: 1440 },
-] as const;
-
-const DEFAULT_MIN_INTERVAL_MINUTES = 60;
 
 /** Static-data key for the last *attempted* poll. See `poll()` for why it is separate. */
 const LAST_POLLED_AT_KEY = "joboLastPolledAt";

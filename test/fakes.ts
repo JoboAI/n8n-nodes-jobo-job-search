@@ -120,6 +120,39 @@ export function job(id: string, createdAt = "2026-11-23T10:00:00Z") {
   return { id, title: `Job ${id}`, created_at: createdAt };
 }
 
+/** A hiring signal as the API returns it: a hiring surge unless told otherwise. */
+export function signal(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    type: "hiring_surge",
+    detected_on: "2026-11-23",
+    created_at: "2026-11-23T10:00:00.1234567Z",
+    window_start: "2026-11-16",
+    window_end: "2026-11-23",
+    strength: 80,
+    company: {
+      id: "0d5f8b4e-1111-4c2a-9a55-2f6d1f0e7a10",
+      name: "Acme",
+      domain: "acme.com",
+      country_code: "US",
+      size: "51-200",
+      industry: "Software Development",
+      industries: ["Software Development"],
+      categories: ["saas"],
+      is_agency: false,
+    },
+    details: { new_jobs: 17, baseline_weekly_avg: 3.1 },
+    focus: { functions: [], topics: [], job_countries: [], job_regions: [], job_cities: [] },
+    evidence_job_ids: ["j1"],
+    ...overrides,
+  };
+}
+
+/** A `GET /api/signals` response body. */
+export function signalPage(signals: unknown[], nextCursor: string | null = null) {
+  return { signals, has_more: nextCursor !== null, ...(nextCursor ? { next_cursor: nextCursor } : {}) };
+}
+
 /** A `POST /api/jobs/search` response body. */
 export function searchPage(opts: { jobs: unknown[]; page: number; pageSize: number; total: number }) {
   return {

@@ -202,6 +202,71 @@ for (const version of [].concat(trigger.description.version)) {
   checkSearchSurface(`trigger v${version}`, visible(trigger, version, {}), { trigger: true });
 }
 
+// ── Hiring Signals (contracts/signals.json, from HIRING_SIGNAL_FILTERS) ──────
+const signalsPath = join(root, "..", "contracts", "signals.json");
+if (!existsSync(signalsPath)) {
+  console.log("  signals contract not present — skipping hiring signal drift checks");
+} else {
+  const signals = JSON.parse(readFileSync(signalsPath, "utf8"));
+  const signalKeys = signals.filters.map((f) => f.key);
+  const companyKeys = signals.company_filter_keys;
+  /** The collections the signal filters sit in; see SIGNAL_COLLECTIONS in descriptions.ts. */
+  const SIGNAL_COLLECTION_NAMES = ["signalCompanyFilters", "signalFocusFilters", "signalThresholds"];
+  const signalEnums = { types: signals.enums.signal_types, seniority: signals.enums.seniority, company_sizes: signals.enums.company_sizes };
+
+  const checkSignalSurface = (label, properties, expected) => {
+    const options = SIGNAL_COLLECTION_NAMES.flatMap((name) => collectionOptions(properties, name));
+    const exposed = options.map((o) => o.name);
+    for (const key of signalKeys) {
+      if (expected.includes(key)) check(`${label}: signal filter "${key}" exposed`, exposed.includes(key));
+      else check(`${label}: "${key}" deliberately not exposed`, !exposed.includes(key));
+    }
+    for (const name of exposed) {
+      check(`${label}: "${name}" is a contract signal filter`, signalKeys.includes(name));
+    }
+    check(`${label}: no filter exposed twice`, new Set(exposed).size === exposed.length);
+    for (const [field, values] of Object.entries(signalEnums)) {
+      if (!exposed.includes(field)) continue;
+      check(`${label}: "${field}" options match the contract`, sameSet(optionValues(options, field), values));
+    }
+    for (const filter of signals.filters.filter((f) => f.kind === "number" && exposed.includes(f.key))) {
+      const field = options.find((o) => o.name === filter.key);
+      check(`${label}: "${filter.key}" maximum matches the contract`, field?.typeOptions?.maxValue === filter.max);
+    }
+  };
+
+  for (const version of versions) {
+    checkSignalSurface(
+      `v${version} signals`,
+      visible(action, version, { resource: "hiringSignal", operation: "getAll" }),
+      signalKeys,
+    );
+    checkSignalSurface(
+      `v${version} company signals`,
+      visible(action, version, { resource: "hiringSignal", operation: "getAllForCompany" }),
+      companyKeys,
+    );
+  }
+
+  const { JoboHiringSignalTrigger } = require(join(root, "dist", "nodes", "Jobo", "JoboHiringSignalTrigger.node.js"));
+  const signalTrigger = new JoboHiringSignalTrigger();
+  for (const version of [].concat(signalTrigger.description.version)) {
+    // The poller owns created_after.
+    checkSignalSurface(
+      `signal trigger v${version}`,
+      visible(signalTrigger, version, {}),
+      signalKeys.filter((key) => key !== "created_after"),
+    );
+    const notice = signalTrigger.description.properties.find((p) => p.type === "notice")?.displayName ?? "";
+    for (const filter of signals.filters.filter((f) => f.narrowing)) {
+      const field = SIGNAL_COLLECTION_NAMES.flatMap((name) => collectionOptions(signalTrigger.description.properties, name)).find(
+        (o) => o.name === filter.key,
+      );
+      check(`signal trigger: notice names narrowing filter "${filter.key}"`, !!field && notice.includes(field.displayName));
+    }
+  }
+}
+
 console.log("");
 if (failures.length > 0) {
   console.error(`${failures.length} filter-contract violation(s).`);
